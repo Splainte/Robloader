@@ -706,9 +706,6 @@ class RobloaderApp(ctk.CTk):
             else:
                 s_val, e_val, segment_duration = 0, total_duration, total_duration
 
-            def _ranges(info_dict, yt):
-                return [{'start_time': s_val, 'end_time': e_val}]
-
             if subs_only:
                 # --- Sous-titres seuls : aucun media telecharge ---
                 self.ui(lambda: status_lbl.configure(text="Téléchargement des sous-titres…", text_color=MUTED))
@@ -732,27 +729,42 @@ class RobloaderApp(ctk.CTk):
                 final_output = srts[0]
                 self.active_tasks[task_id]['final_output'] = final_output
             elif audio_mode:
-                # --- Audio seul (MP3/WAV) : aucun transcodage video ---
+                # --- Audio seul : telechargement COMPLET (natif, compatible SABR) puis decoupe/conversion ---
                 self.ui(lambda: status_lbl.configure(text="Téléchargement audio…", text_color=MUTED))
                 a_opts = {
                     'format': 'bestaudio/best', 'quiet': True, 'noplaylist': True,
-                    'outtmpl': os.path.join(self.download_dir, f"{safe_title}.%(ext)s"),
+                    'outtmpl': os.path.join(self.download_dir, f"temp_{video_id}.%(ext)s"),
                     'ffmpeg_location': self.ffmpeg_path, 'progress_hooks': [progress_hook],
                     'extractor_args': YOUTUBE_EXTRACTOR_ARGS, 'remote_components': dl_remote,
-                    'postprocessors': [{'key': 'FFmpegExtractAudio',
-                                        'preferredcodec': audio_codec, 'preferredquality': '192'}],
                 }
                 a_opts.update(extra_opts)
-                a_opts['postprocessors'] = a_opts['postprocessors'] + extra_pps
+                if extra_pps:
+                    a_opts['postprocessors'] = extra_pps
                 a_opts.update(cookie_opts)
-                if has_range:
-                    a_opts['download_ranges'] = _ranges
-                    a_opts['force_keyframes_at_cuts'] = False
                 with yt_dlp.YoutubeDL(a_opts) as ydl:
                     ydl.download([url])
-                # final_output = safe_title.<codec>, ecrit par le post-processeur audio
+                import glob as _g
+                cand = [p for p in _g.glob(_g.escape(os.path.join(self.download_dir, f"temp_{video_id}")) + '.*')
+                        if os.path.splitext(p)[1].lower() not in ('.srt', '.jpg', '.jpeg', '.png', '.webp', '.part')]
+                if not cand:
+                    raise Exception("Téléchargement audio échoué.")
+                a_src = cand[0]
+                self.ui(lambda: status_lbl.configure(text="Conversion audio…", text_color=MUTED))
+                acodec = ['-c:a', 'libmp3lame', '-q:a', '2'] if audio_codec == 'mp3' else ['-c:a', 'pcm_s16le']
+                seek = (['-ss', str(s_val)] if has_range else [])
+                dur = (['-t', str(segment_duration)] if has_range else [])
+                cmd = [self.ffmpeg_path, '-y', '-progress', 'pipe:1'] + seek + ['-i', a_src] + dur + ['-vn'] + acodec + [final_output]
+                if self.run_ffmpeg_with_progress(cmd, segment_duration, task_id, status_lbl, prog_bar, "Conversion audio…") != 0:
+                    raise Exception("La conversion audio a échoué.")
+                if os.path.exists(a_src):
+                    os.remove(a_src)
             else:
-                # --- Video ---
+                # --- Video : telechargement COMPLET (natif, compatible SABR) puis decoupe LOCALE du segment.
+                #     On n'utilise PLUS download_ranges (ffmpeg fetch la plage) : ca bloque indefiniment
+                #     sur les sessions SABR (formats sans URL directe). cf yt-dlp #12482. ---
+                self.ui(lambda: status_lbl.configure(
+                    text=("Téléchargement (segment découpé ensuite)…" if has_range else "Téléchargement…"),
+                    text_color=MUTED))
                 ydl_opts = {
                     'format': dl_format, 'format_sort': FORMAT_SORT, 'merge_output_format': 'mp4',
                     'outtmpl': temp_output, 'ffmpeg_location': self.ffmpeg_path,
@@ -763,10 +775,6 @@ class RobloaderApp(ctk.CTk):
                 if extra_pps:
                     ydl_opts['postprocessors'] = extra_pps
                 ydl_opts.update(cookie_opts)
-                if has_range:
-                    ydl_opts['download_ranges'] = _ranges
-                    ydl_opts['force_keyframes_at_cuts'] = False
-                    self.ui(lambda: status_lbl.configure(text="Extraction du segment…", text_color=MUTED))
 
                 def run_download(fmt):
                     ydl_opts['format'] = fmt
@@ -798,16 +806,30 @@ class RobloaderApp(ctk.CTk):
                 if self.active_tasks[task_id]['cancel_requested']:
                     raise Exception("Annulé par l'utilisateur")
 
-                # Transcodage : ProRes (toujours) ou H.265 (seulement si source VP9/AV1 ; le H.264
-                # est deja parfait pour Premiere -> garde tel quel, gain de temps enorme).
+                seek = (['-ss', str(s_val)] if has_range else [])
+                dur = (['-t', str(segment_duration)] if has_range else [])
+
                 codec = self._probe_video_codec(temp_output)
                 needs_transcode = want_prores or (codec not in PREMIERE_READY_CODECS)
 
-                if not needs_transcode:
+                if not needs_transcode and not has_range:
+                    # H.264 complet -> deja pret, aucun ré-encodage
                     self.ui(lambda: status_lbl.configure(text="Finalisation…", text_color=MUTED))
                     if os.path.exists(final_output):
                         os.remove(final_output)
                     os.replace(temp_output, final_output)
+                elif not needs_transcode and has_range:
+                    # H.264 + segment -> découpe PRECISE (ré-encodage libx264 ; le 'copy' s'aligne sur
+                    # une keyframe et déborde de plusieurs secondes -> mauvais pour le montage). On reste
+                    # en H.264 (rapide sur un court extrait), pas de HEVC inutile.
+                    self.ui(lambda: status_lbl.configure(text="Découpe du segment…", text_color=MUTED))
+                    cmd = [self.ffmpeg_path, '-y', '-progress', 'pipe:1'] + seek + ['-i', temp_output] + dur + \
+                        ['-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-pix_fmt', 'yuv420p',
+                         '-c:a', 'aac', '-b:a', '256k', '-movflags', '+faststart', final_output]
+                    if self.run_ffmpeg_with_progress(cmd, segment_duration, task_id, status_lbl, prog_bar, "Découpe…") != 0:
+                        raise Exception("La découpe du segment a échoué.")
+                    if os.path.exists(temp_output):
+                        os.remove(temp_output)
                 else:
                     is_mac = sys.platform.startswith("darwin")
                     if want_prores:
@@ -826,7 +848,7 @@ class RobloaderApp(ctk.CTk):
 
                     self.ui(lambda l=label: status_lbl.configure(text=l, text_color=MUTED))
                     self.ui(lambda: prog_bar.set(0))
-                    cmd = [self.ffmpeg_path, '-y', '-progress', 'pipe:1', '-i', temp_output] + venc + aenc + [final_output]
+                    cmd = [self.ffmpeg_path, '-y', '-progress', 'pipe:1'] + seek + ['-i', temp_output] + dur + venc + aenc + [final_output]
                     rc = self.run_ffmpeg_with_progress(cmd, segment_duration, task_id, status_lbl, prog_bar, label)
 
                     if self.active_tasks[task_id]['cancel_requested']:
@@ -835,7 +857,7 @@ class RobloaderApp(ctk.CTk):
                     if rc != 0:
                         self.ui(lambda: status_lbl.configure(text="Encodage CPU (secours)…", text_color=WARN_ORANGE))
                         self.ui(lambda: prog_bar.set(0))
-                        cmd2 = [self.ffmpeg_path, '-y', '-progress', 'pipe:1', '-i', temp_output] + venc_cpu + aenc_cpu + [final_output]
+                        cmd2 = [self.ffmpeg_path, '-y', '-progress', 'pipe:1'] + seek + ['-i', temp_output] + dur + venc_cpu + aenc_cpu + [final_output]
                         rc2 = self.run_ffmpeg_with_progress(cmd2, segment_duration, task_id, status_lbl, prog_bar, "Encodage CPU…")
                         if self.active_tasks[task_id]['cancel_requested']:
                             raise Exception("Annulé par l'utilisateur")
@@ -848,14 +870,15 @@ class RobloaderApp(ctk.CTk):
             # Sous-titres (.srt) / miniature (.jpg) ont ete ecrits a cote du fichier telecharge
             # (basename du download). Pour la video, ce basename = temp_<id> -> on deplace les
             # annexes vers le nom final. Pour l'audio, elles sont deja au bon nom.
-            if (subs or thumb) and not audio_mode and not subs_only:
+            if (subs or thumb) and not subs_only:
                 import glob
-                src_base = os.path.splitext(temp_output)[0]   # .../temp_<id>
-                dst_base = os.path.splitext(final_output)[0]   # .../Titre - Chaine
+                src_base = os.path.join(self.download_dir, f"temp_{video_id}")  # base des annexes ecrites au DL
+                dst_base = os.path.splitext(final_output)[0]                     # .../Titre - Chaine
                 for p in glob.glob(glob.escape(src_base) + '.*'):
+                    low = p.lower()
+                    if not (low.endswith('.srt') or low.endswith(('.jpg', '.jpeg', '.png', '.webp'))):
+                        continue  # on ne deplace QUE sous-titres et miniature
                     suffix = os.path.basename(p)[len(os.path.basename(src_base)):]  # ex: '.fr.srt', '.jpg'
-                    if suffix.lower() in ('.mp4', '.part', '.mov', '.webm', '.mkv'):
-                        continue
                     try:
                         os.replace(p, dst_base + suffix)
                     except Exception:
