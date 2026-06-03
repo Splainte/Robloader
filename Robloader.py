@@ -5,10 +5,61 @@ import shutil
 import tempfile
 import threading
 import subprocess
+import urllib.request
+
+
+def config_dir():
+    if sys.platform.startswith('win'):
+        base = os.environ.get('APPDATA') or os.path.expanduser('~')
+    elif sys.platform == 'darwin':
+        base = os.path.join(os.path.expanduser('~'), 'Library', 'Application Support')
+    else:
+        base = os.environ.get('XDG_CONFIG_HOME') or os.path.join(os.path.expanduser('~'), '.config')
+    return os.path.join(base, 'Robloader')
+
+
+# --- Auto-update yt-dlp ---
+# YouTube casse l'extraction regulierement. On charge une version a jour de yt-dlp si elle a ete
+# telechargee au lancement PRECEDENT (le wheel PyPI est un zip importable via sys.path). Ainsi
+# l'app reste fonctionnelle sans rebuild. Telechargement en tache de fond (cf update_ytdlp_async).
+_YTDLP_WHL = os.path.join(config_dir(), 'yt-dlp.whl')
+if os.path.exists(_YTDLP_WHL):
+    sys.path.insert(0, _YTDLP_WHL)
+
 import tkinter as tk
 import customtkinter as ctk
 from tkinter import filedialog
 import yt_dlp
+
+
+def _norm_version(v):
+    try:
+        return tuple(int(x) for x in str(v).split('.'))
+    except Exception:
+        return (str(v),)
+
+
+def update_ytdlp_async():
+    """En tache de fond : si une version plus recente de yt-dlp existe sur PyPI, telecharge son
+    wheel dans le dossier de config -> pris en compte au PROCHAIN lancement (jamais de swap a chaud)."""
+    def work():
+        try:
+            with urllib.request.urlopen('https://pypi.org/pypi/yt-dlp/json', timeout=12) as r:
+                data = json.load(r)
+            latest = data['info']['version']
+            current = getattr(yt_dlp.version, '__version__', '')
+            if latest and _norm_version(latest) > _norm_version(current):
+                whl_url = next((f['url'] for f in data['releases'].get(latest, [])
+                                if f['filename'].endswith('py3-none-any.whl')), None)
+                if whl_url:
+                    d = config_dir()
+                    os.makedirs(d, exist_ok=True)
+                    tmp = os.path.join(d, 'yt-dlp.whl.part')
+                    urllib.request.urlretrieve(whl_url, tmp)
+                    os.replace(tmp, os.path.join(d, 'yt-dlp.whl'))
+        except Exception:
+            pass
+    threading.Thread(target=work, daemon=True).start()
 
 # --- Strategie d'extraction YouTube (2026) ---
 # La 4K est un casse-tete car YouTube applique DEUX protections selon le client :
@@ -50,22 +101,20 @@ QUALITY_LABELS = [label for label, _ in QUALITY_OPTIONS]
 QUALITY_MAP = dict(QUALITY_OPTIONS)
 DEFAULT_QUALITY = QUALITY_LABELS[0]
 
+# Format de sortie.
+OUT_HEVC = "HEVC (Premiere)"
+OUT_PRORES = "ProRes (montage)"
+OUT_MP3 = "Audio MP3"
+OUT_WAV = "Audio WAV"
+OUTPUT_FORMATS = [OUT_HEVC, OUT_PRORES, OUT_MP3, OUT_WAV]
+DEFAULT_OUTPUT = OUT_HEVC
+
 
 def format_for_height(h):
     """Selecteur de format yt-dlp pour une hauteur max donnee (None = sans plafond)."""
     if not h:
         return 'bv*+ba/b'
     return f'bv*[height<={h}]+ba/bv*[height<={h}]/b[height<={h}]/b'
-
-
-def config_dir():
-    if sys.platform.startswith('win'):
-        base = os.environ.get('APPDATA') or os.path.expanduser('~')
-    elif sys.platform == 'darwin':
-        base = os.path.join(os.path.expanduser('~'), 'Library', 'Application Support')
-    else:
-        base = os.environ.get('XDG_CONFIG_HOME') or os.path.join(os.path.expanduser('~'), '.config')
-    return os.path.join(base, 'Robloader')
 
 
 def load_config():
@@ -242,6 +291,9 @@ class RobloaderApp(ctk.CTk):
         self._set_window_icon()
         self._build_ui()
 
+        # Met yt-dlp a jour en arriere-plan (effectif au prochain lancement).
+        update_ytdlp_async()
+
     # ---------- Helpers ----------
     def _resolve_binary(self, name):
         for d in [self.ffmpeg_base_dir] + self.search_dirs:
@@ -324,6 +376,26 @@ class RobloaderApp(ctk.CTk):
         ctk.CTkLabel(row2, text="format MM:SS ou HH:MM:SS — laisser vide pour la vidéo entière",
                      font=("Helvetica", 11), text_color=MUTED).pack(side="left")
 
+        # Ligne 3 : format de sortie + sous-titres + miniature
+        row3 = ctk.CTkFrame(self, fg_color="transparent")
+        row3.pack(fill="x", padx=24, pady=(4, 2))
+        ctk.CTkLabel(row3, text="Sortie  ", font=("Helvetica", 12, "bold")).pack(side="left")
+        out_init = self.config_data.get("output", DEFAULT_OUTPUT)
+        self.output_var = ctk.StringVar(value=out_init if out_init in OUTPUT_FORMATS else DEFAULT_OUTPUT)
+        self.output_menu = ctk.CTkOptionMenu(
+            row3, values=OUTPUT_FORMATS, variable=self.output_var, width=170, height=32,
+            command=lambda v: self._save_pref("output", v),
+            fg_color=CARD, button_color="#3a3a3a", button_hover_color="#4a4a4a")
+        self.output_menu.pack(side="left", padx=(0, 16))
+        self.subs_var = tk.BooleanVar(value=bool(self.config_data.get("subs", False)))
+        ctk.CTkCheckBox(row3, text="Sous-titres (.srt)", variable=self.subs_var,
+                        command=lambda: self._save_pref("subs", self.subs_var.get()),
+                        height=28).pack(side="left", padx=(0, 14))
+        self.thumb_var = tk.BooleanVar(value=bool(self.config_data.get("thumb", False)))
+        ctk.CTkCheckBox(row3, text="Miniature", variable=self.thumb_var,
+                        command=lambda: self._save_pref("thumb", self.thumb_var.get()),
+                        height=28).pack(side="left")
+
         # Ligne d'etat (destination + cookies/deno)
         self.path_label = ctk.CTkLabel(self, text="", font=("Helvetica", 11), text_color=MUTED, anchor="w")
         self.path_label.pack(fill="x", padx=26, pady=(4, 0))
@@ -355,6 +427,10 @@ class RobloaderApp(ctk.CTk):
 
     def _on_quality_change(self, value):
         self.config_data["quality"] = value
+        save_config(self.config_data)
+
+    def _save_pref(self, key, value):
+        self.config_data[key] = value
         save_config(self.config_data)
 
     # ---------- Actions ----------
@@ -392,18 +468,26 @@ class RobloaderApp(ctk.CTk):
         return None
 
     def start_download_thread(self):
-        url = self.url_entry.get().strip()
-        if not url:
+        raw = self.url_entry.get().strip()
+        if not raw:
             return
 
         start_val = self.start_entry.get().strip()
         end_val = self.end_entry.get().strip()
         quality_label = self.quality_var.get()
+        output = self.output_var.get()
+        subs = bool(self.subs_var.get())
+        thumb = bool(self.thumb_var.get())
 
         self.url_entry.delete(0, "end")
         self.start_entry.delete(0, "end")
         self.end_entry.delete(0, "end")
 
+        # Batch : on accepte plusieurs URLs separees par des espaces / retours a la ligne.
+        for url in [u for u in raw.split() if u.startswith("http")] or [raw]:
+            self._enqueue(url, start_val, end_val, quality_label, output, subs, thumb)
+
+    def _enqueue(self, url, start_val, end_val, quality_label, output, subs, thumb):
         self.task_counter += 1
         task_id = self.task_counter
 
@@ -438,7 +522,7 @@ class RobloaderApp(ctk.CTk):
 
         thread = threading.Thread(
             target=self.download_pipeline,
-            args=(url, start_val, end_val, quality_label, task_id,
+            args=(url, start_val, end_val, quality_label, output, subs, thumb, task_id,
                   title_label, status_label, progress_bar, action_btn))
         thread.daemon = True
         thread.start()
@@ -507,7 +591,7 @@ class RobloaderApp(ctk.CTk):
         process.wait()
         return process.returncode
 
-    def download_pipeline(self, url, start_str, end_str, quality_label, task_id,
+    def download_pipeline(self, url, start_str, end_str, quality_label, output, subs, thumb, task_id,
                           title_lbl, status_lbl, prog_bar, action_btn):
         temp_output = None
         final_output = None
@@ -523,11 +607,14 @@ class RobloaderApp(ctk.CTk):
             fb_h = 1080 if not target_h else min(target_h, 1080)
             fallback_format = format_for_height(fb_h)
             dl_remote = EJS_REMOTE_COMPONENTS if self.js_runtime else []
+            audio_mode = output in (OUT_MP3, OUT_WAV)
+            want_prores = (output == OUT_PRORES)
+            audio_codec = 'mp3' if output == OUT_MP3 else 'wav'
 
             self.ui(lambda: status_lbl.configure(text="Analyse de la vidéo…", text_color=MUTED))
 
             info_opts = {
-                'quiet': True, 'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
+                'quiet': True, 'noplaylist': True, 'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
                 'remote_components': dl_remote, 'format': dl_format, 'format_sort': FORMAT_SORT,
             }
 
@@ -571,8 +658,9 @@ class RobloaderApp(ctk.CTk):
                 safe_title = f"video_{video_id}"
             self.ui(lambda: title_lbl.configure(text=safe_title))
 
+            final_ext = audio_codec if audio_mode else ('mov' if want_prores else 'mp4')
             temp_output = os.path.join(self.download_dir, f"temp_{video_id}.mp4")
-            final_output = os.path.join(self.download_dir, f"{safe_title}.mp4")
+            final_output = os.path.join(self.download_dir, f"{safe_title}.{final_ext}")
             self.active_tasks[task_id]['temp_output'] = temp_output
             self.active_tasks[task_id]['final_output'] = final_output
 
@@ -588,100 +676,155 @@ class RobloaderApp(ctk.CTk):
                         self.ui(lambda p=percent: status_lbl.configure(
                             text=f"Téléchargement… {int(p * 100)}%", text_color=MUTED))
 
-            ydl_opts = {
-                'format': dl_format, 'format_sort': FORMAT_SORT, 'merge_output_format': 'mp4',
-                'outtmpl': temp_output, 'ffmpeg_location': self.ffmpeg_path,
-                'progress_hooks': [progress_hook], 'quiet': True,
-                'extractor_args': YOUTUBE_EXTRACTOR_ARGS, 'remote_components': dl_remote,
-            }
-            ydl_opts.update(cookie_opts)
-
-            if start_seconds is not None or end_seconds is not None:
+            has_range = start_seconds is not None or end_seconds is not None
+            if has_range:
                 s_val = start_seconds if start_seconds is not None else 0
                 e_val = end_seconds if end_seconds is not None else total_duration
-                ydl_opts['download_ranges'] = lambda info_dict, yt: [{'start_time': s_val, 'end_time': e_val}]
-                ydl_opts['force_keyframes_at_cuts'] = False
-                self.ui(lambda: status_lbl.configure(text="Extraction du segment…", text_color=MUTED))
                 segment_duration = max(e_val - s_val, 1)
             else:
-                segment_duration = total_duration
+                s_val, e_val, segment_duration = 0, total_duration, total_duration
 
-            def run_download(fmt):
-                ydl_opts['format'] = fmt
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            def _ranges(info_dict, yt):
+                return [{'start_time': s_val, 'end_time': e_val}]
+
+            if audio_mode:
+                # --- Audio seul (MP3/WAV) : aucun transcodage video ---
+                self.ui(lambda: status_lbl.configure(text="Téléchargement audio…", text_color=MUTED))
+                a_opts = {
+                    'format': 'bestaudio/best', 'quiet': True, 'noplaylist': True,
+                    'outtmpl': os.path.join(self.download_dir, f"{safe_title}.%(ext)s"),
+                    'ffmpeg_location': self.ffmpeg_path, 'progress_hooks': [progress_hook],
+                    'extractor_args': YOUTUBE_EXTRACTOR_ARGS, 'remote_components': dl_remote,
+                    'postprocessors': [{'key': 'FFmpegExtractAudio',
+                                        'preferredcodec': audio_codec, 'preferredquality': '192'}],
+                }
+                a_opts.update(cookie_opts)
+                if has_range:
+                    a_opts['download_ranges'] = _ranges
+                    a_opts['force_keyframes_at_cuts'] = False
+                with yt_dlp.YoutubeDL(a_opts) as ydl:
                     ydl.download([url])
-
-            def cleanup_partial():
-                for p in (temp_output, temp_output + ".part"):
-                    try:
-                        if p and os.path.exists(p):
-                            os.remove(p)
-                    except Exception:
-                        pass
-
-            # Auto-resilience : si le format demande echoue (4K bloquee/403), repli en <=1080p.
-            try:
-                run_download(dl_format)
-            except Exception:
-                if self.active_tasks[task_id]['cancel_requested']:
-                    raise
-                if dl_format != fallback_format:
-                    cleanup_partial()
-                    self.ui(lambda: status_lbl.configure(text="Qualité max indisponible — repli en 1080p…",
-                                                         text_color=WARN_ORANGE))
-                    run_download(fallback_format)
-                else:
-                    raise
-
-            if self.active_tasks[task_id]['cancel_requested']:
-                raise Exception("Annulé par l'utilisateur")
-
-            # --- Transcodage H.265 UNIQUEMENT si necessaire (source VP9/AV1). Le H.264/HEVC en MP4
-            #     est deja parfait pour Premiere -> on garde tel quel (gain de temps enorme). ---
-            codec = self._probe_video_codec(temp_output)
-            needs_transcode = codec not in PREMIERE_READY_CODECS  # vp9/av1/inconnu -> on transcode
-
-            if not needs_transcode:
-                self.ui(lambda: status_lbl.configure(text="Finalisation…", text_color=MUTED))
-                if os.path.exists(final_output):
-                    os.remove(final_output)
-                os.replace(temp_output, final_output)
+                # final_output = safe_title.<codec>, ecrit par le post-processeur audio
             else:
-                self.ui(lambda: status_lbl.configure(text="Conversion H.265 (Premiere Pro)…", text_color=MUTED))
-                self.ui(lambda: prog_bar.set(0))
+                # --- Video ---
+                ydl_opts = {
+                    'format': dl_format, 'format_sort': FORMAT_SORT, 'merge_output_format': 'mp4',
+                    'outtmpl': temp_output, 'ffmpeg_location': self.ffmpeg_path,
+                    'progress_hooks': [progress_hook], 'quiet': True, 'noplaylist': True,
+                    'extractor_args': YOUTUBE_EXTRACTOR_ARGS, 'remote_components': dl_remote,
+                }
+                ydl_opts.update(cookie_opts)
+                if has_range:
+                    ydl_opts['download_ranges'] = _ranges
+                    ydl_opts['force_keyframes_at_cuts'] = False
+                    self.ui(lambda: status_lbl.configure(text="Extraction du segment…", text_color=MUTED))
 
-                if sys.platform.startswith("darwin"):
-                    encoder_args = ['-c:v', 'hevc_videotoolbox', '-q:v', '65', '-tag:v', 'hvc1']
-                else:
-                    encoder_args = ['-c:v', 'hevc_nvenc', '-rc', 'vbr', '-cq', '18', '-pix_fmt', 'yuv420p', '-tag:v', 'hvc1']
+                def run_download(fmt):
+                    ydl_opts['format'] = fmt
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        ydl.download([url])
 
-                ffmpeg_cmd = [self.ffmpeg_path, '-y', '-progress', 'pipe:1', '-i', temp_output] \
-                    + encoder_args + ['-c:a', 'aac', '-b:a', '256k', final_output]
-                rc = self.run_ffmpeg_with_progress(ffmpeg_cmd, segment_duration, task_id, status_lbl, prog_bar,
-                                                   "Conversion GPU…")
+                def cleanup_partial():
+                    for p in (temp_output, temp_output + ".part"):
+                        try:
+                            if p and os.path.exists(p):
+                                os.remove(p)
+                        except Exception:
+                            pass
+
+                # Auto-resilience : si le format demande echoue (4K bloquee/403), repli en <=1080p.
+                try:
+                    run_download(dl_format)
+                except Exception:
+                    if self.active_tasks[task_id]['cancel_requested']:
+                        raise
+                    if dl_format != fallback_format:
+                        cleanup_partial()
+                        self.ui(lambda: status_lbl.configure(text="Qualité max indisponible — repli en 1080p…",
+                                                             text_color=WARN_ORANGE))
+                        run_download(fallback_format)
+                    else:
+                        raise
 
                 if self.active_tasks[task_id]['cancel_requested']:
                     raise Exception("Annulé par l'utilisateur")
 
-                if rc != 0:
-                    self.ui(lambda: status_lbl.configure(text="GPU indisponible — encodage CPU…", text_color=WARN_ORANGE))
+                # Transcodage : ProRes (toujours) ou H.265 (seulement si source VP9/AV1 ; le H.264
+                # est deja parfait pour Premiere -> garde tel quel, gain de temps enorme).
+                codec = self._probe_video_codec(temp_output)
+                needs_transcode = want_prores or (codec not in PREMIERE_READY_CODECS)
+
+                if not needs_transcode:
+                    self.ui(lambda: status_lbl.configure(text="Finalisation…", text_color=MUTED))
+                    if os.path.exists(final_output):
+                        os.remove(final_output)
+                    os.replace(temp_output, final_output)
+                else:
+                    is_mac = sys.platform.startswith("darwin")
+                    if want_prores:
+                        label = "Conversion ProRes…"
+                        venc = ['-c:v', 'prores_videotoolbox', '-profile:v', '3'] if is_mac \
+                            else ['-c:v', 'prores_ks', '-profile:v', '3']
+                        aenc = ['-c:a', 'pcm_s16le']
+                        venc_cpu, aenc_cpu = ['-c:v', 'prores_ks', '-profile:v', '3'], ['-c:a', 'pcm_s16le']
+                    else:
+                        label = "Conversion H.265 (Premiere Pro)…"
+                        venc = ['-c:v', 'hevc_videotoolbox', '-q:v', '65', '-tag:v', 'hvc1'] if is_mac \
+                            else ['-c:v', 'hevc_nvenc', '-rc', 'vbr', '-cq', '18', '-pix_fmt', 'yuv420p', '-tag:v', 'hvc1']
+                        aenc = ['-c:a', 'aac', '-b:a', '256k']
+                        venc_cpu = ['-c:v', 'libx265', '-crf', '18', '-preset', 'fast', '-tag:v', 'hvc1']
+                        aenc_cpu = ['-c:a', 'aac', '-b:a', '256k']
+
+                    self.ui(lambda l=label: status_lbl.configure(text=l, text_color=MUTED))
                     self.ui(lambda: prog_bar.set(0))
-                    cpu_args = ['-c:v', 'libx265', '-crf', '18', '-preset', 'fast', '-tag:v', 'hvc1']
-                    ffmpeg_cmd_cpu = [self.ffmpeg_path, '-y', '-progress', 'pipe:1', '-i', temp_output] \
-                        + cpu_args + ['-c:a', 'aac', '-b:a', '256k', final_output]
-                    rc_cpu = self.run_ffmpeg_with_progress(ffmpeg_cmd_cpu, segment_duration, task_id, status_lbl,
-                                                           prog_bar, "Conversion CPU…")
+                    cmd = [self.ffmpeg_path, '-y', '-progress', 'pipe:1', '-i', temp_output] + venc + aenc + [final_output]
+                    rc = self.run_ffmpeg_with_progress(cmd, segment_duration, task_id, status_lbl, prog_bar, label)
+
                     if self.active_tasks[task_id]['cancel_requested']:
                         raise Exception("Annulé par l'utilisateur")
-                    if rc_cpu != 0:
-                        raise Exception("Le transcodage vidéo a échoué.")
 
-                if os.path.exists(temp_output):
-                    os.remove(temp_output)
+                    if rc != 0:
+                        self.ui(lambda: status_lbl.configure(text="Encodage CPU (secours)…", text_color=WARN_ORANGE))
+                        self.ui(lambda: prog_bar.set(0))
+                        cmd2 = [self.ffmpeg_path, '-y', '-progress', 'pipe:1', '-i', temp_output] + venc_cpu + aenc_cpu + [final_output]
+                        rc2 = self.run_ffmpeg_with_progress(cmd2, segment_duration, task_id, status_lbl, prog_bar, "Encodage CPU…")
+                        if self.active_tasks[task_id]['cancel_requested']:
+                            raise Exception("Annulé par l'utilisateur")
+                        if rc2 != 0:
+                            raise Exception("Le transcodage vidéo a échoué.")
+
+                    if os.path.exists(temp_output):
+                        os.remove(temp_output)
+
+            # Sous-titres (.srt) et/ou miniature — best-effort (ne casse jamais le téléchargement).
+            if subs or thumb:
+                self.ui(lambda: status_lbl.configure(text="Sous-titres / miniature…", text_color=MUTED))
+                base = os.path.splitext(final_output)[0]
+                s_opts = {
+                    'quiet': True, 'noplaylist': True, 'skip_download': True,
+                    'outtmpl': base + '.%(ext)s', 'ffmpeg_location': self.ffmpeg_path,
+                    'extractor_args': YOUTUBE_EXTRACTOR_ARGS, 'remote_components': dl_remote,
+                }
+                s_opts.update(cookie_opts)
+                if subs:
+                    s_opts.update({'writesubtitles': True, 'writeautomaticsub': True,
+                                   'subtitleslangs': ['fr', 'en'],
+                                   'postprocessors': [{'key': 'FFmpegSubtitlesConvertor', 'format': 'srt'}]})
+                if thumb:
+                    s_opts['writethumbnail'] = True
+                try:
+                    with yt_dlp.YoutubeDL(s_opts) as ydl:
+                        ydl.download([url])
+                except Exception:
+                    pass
 
             self.ui(lambda: prog_bar.set(1.0))
-            done_msg = "Terminé ✓ Prêt pour Premiere Pro" if needs_transcode \
-                else "Terminé ✓ (H.264, sans ré-encodage)"
+            if audio_mode:
+                done_msg = f"Terminé ✓ Audio {audio_codec.upper()}"
+            elif want_prores:
+                done_msg = "Terminé ✓ ProRes (.mov)"
+            else:
+                done_msg = "Terminé ✓ Prêt pour Premiere Pro"
             self.ui(lambda m=done_msg: status_lbl.configure(text=m, text_color=OK_GREEN))
             self.ui(lambda: action_btn.configure(
                 text="Ouvrir le dossier", state="normal", fg_color="#27ae60",
