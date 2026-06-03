@@ -9,8 +9,9 @@ from PyInstaller.utils.hooks import collect_data_files
 _wanted = [('bin/ffmpeg', '.'), ('bin/ffprobe', '.'), ('bin/deno', '.')]
 binaries = [(src, dst) for (src, dst) in _wanted if os.path.exists(src)]
 
-# customtkinter embarque des assets (themes, polices) qu'il faut copier.
-datas = collect_data_files('customtkinter')
+# customtkinter embarque des assets (themes, polices) + nos icones.
+_icons = [(f, '.') for f in ('logo.png', 'logo.icns', 'logo.ico') if os.path.exists(f)]
+datas = collect_data_files('customtkinter') + _icons
 
 a = Analysis(
     ['Robloader.py'],

@@ -11,11 +11,13 @@ Interface graphique sombre (CustomTkinter), file d'attente multi-téléchargemen
 
 ## 🚀 Fonctionnalités
 
-- **Qualité MAX** — récupère le meilleur flux disponible (1080p / 4K) sans plafond de résolution.
-- **Découpe au timecode** — télécharge uniquement la portion `Début → Fin` (formats `MM:SS` ou `HH:MM:SS`).
-- **Optimisation Premiere Pro** — conversion HEVC GPU (NVIDIA NVENC / Apple VideoToolbox) avec repli CPU (`libx265`).
-- **File d'attente** — plusieurs téléchargements en parallèle, chacun annulable.
-- **Cookies optionnels** — gère les vidéos à accès restreint / âge si un `cookies.txt` est présent.
+- **Sélecteur de qualité** — menu déroulant (Max/4K, 1440p, 1080p, 720p, 480p), **mémorisé** d'une session à l'autre.
+- **Découpe au timecode** — télécharge uniquement la portion `Début → Fin` (`MM:SS` ou `HH:MM:SS`), ou la vidéo entière si vide.
+- **Transcodage H.265 intelligent** — ne ré-encode **que** les sources VP9/AV1 (4K). Le **H.264 (1080p et moins) est gardé tel quel** : import Premiere immédiat, sans attente d'encodage.
+- **Optimisation Premiere Pro** — encodage HEVC GPU (NVIDIA NVENC / Apple VideoToolbox) avec repli CPU (`libx265`).
+- **Cookies automatiques** — lit les cookies de **Chrome/Safari** si connecté à YouTube (4K sans manip), ou un `cookies.txt` posé à côté de l'app.
+- **File d'attente** — plusieurs téléchargements en parallèle, chacun annulable, + bouton **« Nettoyer la liste »**.
+- **Multi-plateforme** — Windows (NVENC) et **macOS** (VideoToolbox, `.app` + `.dmg`).
 
 ---
 
@@ -102,9 +104,13 @@ pour la 4K**. Pourquoi : YouTube protège les flux 4K de deux façons selon le c
 **Être authentifié (cookies) fait sauter ces deux verrous** : le client web devient « de confiance »
 et délivre la 4K sans 403. C'est plus simple qu'un serveur de PO Token.
 
-**Comment faire** : avec une extension navigateur type *« Get cookies.txt LOCALLY »*, connecté à
-YouTube, exportez au format Netscape dans un fichier **`cookies.txt`** placé **à côté de l'app**.
-Robloader (et `diag_youtube.py`) le détectent automatiquement.
+**Le plus simple — cookies automatiques** : si vous êtes connecté à YouTube dans **Chrome** ou
+**Safari**, Robloader lit les cookies du navigateur tout seul (rien à faire). La ligne d'état en
+haut affiche alors `cookies chrome ✓`.
+
+**Sinon — fichier cookies.txt** : avec une extension type *« Get cookies.txt LOCALLY »*, connecté à
+YouTube, exportez au format Netscape dans un **`cookies.txt`** placé **à côté de l'app**. Il est
+prioritaire sur les cookies navigateur. `diag_youtube.py` le détecte aussi.
 
 > 🧩 Alternative lourde si les cookies ne suffisent pas : un **fournisseur de PO Token**
 > ([bgutil-ytdlp-pot-provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider)), à faire
@@ -127,11 +133,13 @@ python Robloader.py
 
 ## 🍎 Version macOS
 
-Le code est cross-platform (encodage `hevc_videotoolbox` sur Mac, ouverture Finder, etc.).
-Pour produire un **`Robloader.app`** :
+Le code est cross-platform (encodage `hevc_videotoolbox`, ouverture Finder, icône, etc.).
+Pour produire un **`Robloader.app`** + un **`.dmg`** distribuable :
 
 ```bash
-# Sur un Mac (PyInstaller ne cross-compile pas) :
+# Sur un Mac. Tk 8.6+/9.0 REQUIS (le Python système est en Tk 8.5 -> UI grise) :
+brew install python-tk
+"$(brew --prefix)/bin/python3" -m venv .venv && source .venv/bin/activate
 ./build_macos.sh
 open dist/Robloader.app
 ```
@@ -139,22 +147,23 @@ open dist/Robloader.app
 Le script (`build_macos.sh`) :
 1. détecte l'architecture (**Apple Silicon `arm64`** ou **Intel `x86_64`**) ;
 2. installe les dépendances Python (`pyinstaller`, `customtkinter`, `yt-dlp`) ;
-3. télécharge **Deno** (binaire mac de l'archi) dans `bin/` ;
-4. récupère **ffmpeg + ffprobe** (depuis Homebrew si dispo) dans `bin/` ;
-5. construit le `.app` via `Robloader.spec` (Deno + ffmpeg + ffprobe **embarqués** dans l'app).
+3. télécharge **Deno** + **ffmpeg/ffprobe statiques** (autonomes) dans `bin/` ;
+4. construit le `.app` (Deno + ffmpeg + ffprobe + icône **embarqués**) ;
+5. produit un **`dist/Robloader.dmg`** prêt à distribuer (glisser l'app dans Applications).
 
 ### Points d'attention macOS
 
-- **cookies.txt** : dans un `.app`, « à côté de l'app » est *hors* du bundle. Robloader cherche
-  `cookies.txt` à côté du `.app`, puis dans `~/Library/Application Support/Robloader/`, puis `~`.
+- **Tk 8.6+ / 9.0 obligatoire** : le Python *système* (Tk 8.5, déprécié) rend l'UI **toute grise**.
+  Utilisez un Python Homebrew (`brew install python-tk`) — d'où le venv dans les commandes ci-dessus.
+- **ffmpeg statique** : le script récupère des binaires **autonomes** (pas de dylibs) → l'app
+  tourne sur **n'importe quel Mac**. Repli Homebrew seulement si le téléchargement échoue (et là,
+  ça ne tournera que sur *ta* machine).
 - **Gatekeeper** : l'app n'est pas signée → au 1er lancement, **clic droit ▸ Ouvrir** (ou
-  `xattr -dr com.apple.quarantine dist/Robloader.app`). Pour une vraie distribution, il faut
-  **signer + notariser** avec un compte Apple Developer (`codesign` / `notarytool`).
-- **Distribution vers d'autres Macs** : les ffmpeg/ffprobe de **Homebrew dépendent de dylibs** et
-  ne tourneront pas ailleurs. Pour distribuer, mettez des **builds statiques** dans `bin/` avant de
-  lancer le script (ex. [osxexperts.net](https://www.osxexperts.net/) pour arm64, ou un ffmpeg
-  static universel). Pour un test **sur ta propre machine**, Homebrew suffit.
-- **GPU** : l'encodage HEVC utilise `hevc_videotoolbox` (matériel Apple) ; pas de NVENC sur Mac.
+  `xattr -dr com.apple.quarantine dist/Robloader.app`). Distribution sans avertissement = signer +
+  notariser (compte Apple Developer, `codesign` / `notarytool`) — non configuré ici.
+- **cookies** : dans un `.app`, « à côté de l'app » est *hors* du bundle ; Robloader cherche aussi
+  `~/Library/Application Support/Robloader/`. Le plus simple reste les **cookies navigateur auto**.
+- **GPU** : encodage HEVC via `hevc_videotoolbox` (matériel Apple) ; pas de NVENC sur Mac.
 
 ## 🔧 Comment la qualité MAX est garantie
 
