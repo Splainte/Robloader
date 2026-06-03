@@ -8,21 +8,20 @@ import customtkinter as ctk
 from tkinter import filedialog
 import yt_dlp
 
-# --- Strategie d'extraction YouTube (2025) ---
-# On agrege les formats de plusieurs clients pour obtenir le MAX de qualite (jusqu'a la 4K) :
-#   - default          : le jeu de clients par defaut de yt-dlp (le plus a jour).
-#   - -tv              : on RETIRE le client TV qui renvoie des formats DRM non telechargeables.
-#   - web_safari       : ajoute les formats web HD/4K (necessite la resolution du nsig).
-#   - ios              : filet de secours si tout le reste echoue.
-# Combiner ces clients evite a la fois le 360p (client mobile seul) et les blocages DRM (client TV).
-# 'missing_pot' demande a yt-dlp de NE PAS jeter les formats qui n'ont pas de PO Token
-# (sinon, sans fournisseur de PoT, on retombe sur des formats bas debit).
+# --- Strategie d'extraction YouTube (2026) ---
+# Choix des "clients" YouTube, determinant pour avoir la 4K SANS se faire bloquer :
+#   - tv  : c'est le SEUL client qui sert la 4K/1440p SANS exiger de PO Token. Les clients web
+#           (web/web_safari) servent aussi de la 4K mais "MISSING POT" -> HTTP 403 sur une IP
+#           residentielle. D'ou le bug "la 4K bloque" quand on excluait tv.
+#   - ios : filet de secours bas/moyen (mobile, pas de PoT) si tv echoue (ex: video DRM).
+# Les rares formats DRM (tv) sont automatiquement ecartes par yt-dlp (has_drm) ; on retombe alors
+# sur un format non-DRM, et en dernier recours sur le repli 1080p (voir FALLBACK_FORMAT).
+# 'missing_pot' = ne pas jeter d'emblee les formats sans PO Token.
 #
-# IMPORTANT (anti-blocage "Preparation") : installer Deno (https://deno.com) accelere enormement
-# le calcul du nsig sur les longues videos. Voir le README.
+# IMPORTANT : la 4K exige aussi la resolution du nsig -> Deno + remote_components (voir plus bas).
 YOUTUBE_EXTRACTOR_ARGS = {
     'youtube': {
-        'player_client': ['default', '-tv', 'web_safari', 'ios'],
+        'player_client': ['tv', 'ios'],
         'formats': ['missing_pot'],
     }
 }
@@ -365,7 +364,6 @@ class RobloaderApp(ctk.CTk):
                 'quiet': True,
                 'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
                 'remote_components': dl_remote,
-                'paths': {'temp': self.temp_dir},
             }
             if os.path.exists(self.cookie_path):
                 ydl_opts['cookiefile'] = self.cookie_path

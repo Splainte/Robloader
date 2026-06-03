@@ -80,7 +80,7 @@ opts = {
     "logger": log,
     "remote_components": ["ejs:github"],
     "extractor_args": {"youtube": {
-        "player_client": ["default", "-tv", "web_safari", "ios"],
+        "player_client": ["tv", "ios"],
         "formats": ["missing_pot"],
     }},
     "format": "bv*+ba/b",
@@ -113,6 +113,36 @@ try:
         print("Warnings yt-dlp :")
         for w in log.warnings[:8]:
             print("  -", w[:160])
+
+    # Test REEL : ~2s du flux 4K choisi -> detecte un HTTP 403 (flux bloque sur IP residentielle),
+    # ce que l'extraction ci-dessus ne voit pas.
+    print("-" * 60)
+    print("Test de telechargement reel (2 s du flux choisi)...")
+    out = os.path.join(tempfile.gettempdir(), "rbl_test.%(ext)s")
+    dlopts = {
+        "quiet": True, "logger": log, "remote_components": ["ejs:github"],
+        "extractor_args": opts["extractor_args"], "format": "bv*+ba/b",
+        "outtmpl": out, "merge_output_format": "mp4", "overwrites": True,
+        "download_ranges": lambda i, y: [{"start_time": 0, "end_time": 2}],
+        "force_keyframes_at_cuts": False,
+    }
+    try:
+        with yt_dlp.YoutubeDL(dlopts) as y:
+            y.download([URL])
+        print("Test DL 4K    : ✅ OK — la 4K se télécharge sur cette connexion.")
+    except Exception as e:
+        msg = str(e)
+        print(f"Test DL 4K    : ❌ ECHEC -> {msg[:140]}")
+        if "403" in msg or "Forbidden" in msg:
+            print("  -> HTTP 403 : flux 4K bloqué (PO Token / IP). Pistes : cookies.txt, sinon repli 1080p.")
+    finally:
+        for ext in ("mp4", "webm", "mkv", "part"):
+            p = os.path.join(tempfile.gettempdir(), "rbl_test." + ext)
+            try:
+                if os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
 except Exception as e:
     print(f"ECHEC extraction : {e!r}")
     if log.warnings:

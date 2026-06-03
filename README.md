@@ -26,7 +26,7 @@ Interface graphique sombre (CustomTkinter), file d'attente multi-téléchargemen
 | **Python 3.9+** | exécution | ✅ |
 | **yt-dlp** (à jour) | extraction YouTube | ✅ |
 | **customtkinter** | interface | ✅ |
-| **ffmpeg** | découpe + ré-encodage HEVC | ✅ (placé à côté du script / bundlé) |
+| **ffmpeg** + **ffprobe** | découpe + ré-encodage HEVC + lecture des métadonnées | ✅ **les deux** binaires, à côté du script / bundlés |
 | **Deno** (+ scripts EJS) | résout le `nsig` du player YouTube | ⚠️ **requis pour la 4K / 1440p** — sans lui, repli auto en 1080p |
 
 Installation des paquets Python :
@@ -82,10 +82,13 @@ posé à côté de l'app). Selon le résultat :
 Autrement dit : **sans Deno, l'app ne casse plus** — elle télécharge proprement en 1080p au lieu
 de planter sur la 4K. Ajouter Deno débloque la 4K sans rien changer d'autre.
 
-### ffmpeg
+### ffmpeg + ffprobe
 
-Le binaire `ffmpeg` (`ffmpeg.exe` sous Windows) doit se trouver **dans le même dossier que
-`Robloader.py`** (ou être inclus par PyInstaller via `sys._MEIPASS` pour la version packagée).
+Les binaires `ffmpeg` **et `ffprobe`** (`ffmpeg.exe` / `ffprobe.exe` sous Windows) doivent se
+trouver **dans le même dossier que `Robloader.py`** (ou être inclus par PyInstaller via
+`sys._MEIPASS`). ⚠️ `ffprobe` est souvent oublié : sans lui, yt-dlp affiche
+`ffprobe not found ... Unable to extract metadata`. Il est livré dans la **même archive** que
+ffmpeg.
 
 ### cookies.txt (optionnel)
 
@@ -110,23 +113,24 @@ python Robloader.py
 
 ## 🔧 Comment la qualité MAX est garantie
 
-YouTube sert des formats différents selon le « client » simulé :
+YouTube sert des formats différents selon le « client » simulé — et c'est **décisif pour la 4K** :
 
-- `ios` / `android` **seuls** → souvent limités au **360p** (sans PO Token).
-- `tv` **seul** → peut renvoyer des formats **DRM** non téléchargeables.
-
-Robloader interroge donc **plusieurs clients à la fois** et laisse yt-dlp agréger puis choisir
-le meilleur format **non-DRM** disponible :
+- `ios` / `android` **seuls** → souvent limités au **360p**.
+- `web` / `web_safari` → servent de la 4K, mais **marquée `MISSING POT`** : sans PO Token, le
+  serveur renvoie **HTTP 403** sur une connexion résidentielle (le flux ne se télécharge pas).
+- **`tv`** → sert la **4K / 1440p SANS PO Token** : c'est la seule source 4K fiable sans serveur
+  externe. Ses rares formats DRM sont automatiquement écartés par yt-dlp.
 
 ```python
-player_client     = ['default', '-tv', 'web_safari', 'ios']   # -tv = on retire le client DRM
-format            = 'bv*+ba/b'                                 # meilleure vidéo + meilleur audio, sans plafond
-formats           = ['missing_pot']                            # garde les formats sans PO Token
-remote_components = ['ejs:github']                             # script solveur nsig -> debloque la 4K
+player_client     = ['tv', 'ios']     # tv = 4K sans PO Token ; ios = filet de secours
+format            = 'bv*+ba/b'        # meilleure vidéo + meilleur audio, sans plafond
+formats           = ['missing_pot']   # ne jette pas d'emblée les formats sans PoT
+remote_components = ['ejs:github']    # script solveur nsig (via Deno) -> indispensable 4K
 ```
 
-Cela évite le 360p (client mobile seul), les blocages DRM (client TV, retiré via `-tv`), et —
-grâce à Deno + EJS — débloque la **4K/1440p** dont les flux exigent la résolution du `nsig`.
+⚠️ **Le piège** : exclure `tv` (ce qu'on faisait pour éviter le DRM) supprime la seule 4K
+sans PoT → il ne reste que la 4K `web` → **403**. La bonne approche est de **garder `tv`** et de
+laisser yt-dlp ignorer les formats DRM.
 
 ---
 
@@ -138,7 +142,10 @@ grâce à Deno + EJS — débloque la **4K/1440p** dont les flux exigent la rés
 
 | Symptôme | Cause | Solution |
 |---|---|---|
-| **La 4K bloque / `ffmpeg exited with code …`** (mais la 1080p marche) | `nsig` non résolu → flux 4K throttlés / 403 | **installer/bundler Deno** ; le script EJS est déjà activé dans le code (`remote_components`) |
+| **La 4K → `HTTP 403 Forbidden`** puis repli 1080p | flux 4K `web` qui exige un PO Token (IP résidentielle) | utiliser le client **`tv`** (déjà fait : 4K sans PoT) ; si ça persiste, ajouter un `cookies.txt` |
+| **`Permission denied …\system32\…tmp`** | dossier temp non inscriptible (app lancée en admin) | corrigé : l'app force un dossier temp valide au démarrage |
+| **`ffprobe not found`** | seul `ffmpeg.exe` est présent | ajouter **`ffprobe.exe`** à côté (même archive ffmpeg) |
+| **La 4K bloque / `ffmpeg exited with code …`** | `nsig` non résolu (pas de moteur JS) | **installer/bundler Deno** ; EJS déjà activé dans le code |
 | Bloqué / **lent** sur « Preparation » | `nsig` à résoudre + (avant) bug de threading UI | bug de threading corrigé ; mettre yt-dlp à jour ; Deno accélère |
 | Vidéo en **360p** | client mobile seul sans PO Token | déjà corrigé (stratégie multi-clients) ; garder yt-dlp à jour |
 | Erreur **DRM** | seul un format protégé était proposé | la liste multi-clients fournit une alternative non-DRM ; sinon la vidéo est réellement protégée |
