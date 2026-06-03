@@ -110,37 +110,39 @@ def has_js_runtime():
     return shutil.which('deno') is not None
 
 
-def detect_browser_cookies():
-    """Retourne le 1er navigateur dont la base de cookies existe (pour 'cookiesfrombrowser').
-    Permet la 4K sans cookies.txt si l'utilisateur est connecte a YouTube dans son navigateur."""
+def detect_browsers():
+    """Liste ORDONNEE des navigateurs presents (pour 'cookiesfrombrowser'), a essayer tour a tour.
+    Firefox est mis avant Chrome car Chrome VERROUILLE sa base de cookies quand il est ouvert
+    (yt-dlp #7271 / #7271 'Could not copy Chrome cookie database') -> Firefox passe meme ouvert."""
     home = os.path.expanduser("~")
     if sys.platform == 'darwin':
         cand = [
+            ('firefox', "Library/Application Support/Firefox/Profiles"),
             ('chrome', "Library/Application Support/Google/Chrome"),
             ('brave',  "Library/Application Support/BraveSoftware/Brave-Browser"),
             ('edge',   "Library/Application Support/Microsoft Edge"),
-            ('firefox', "Library/Application Support/Firefox/Profiles"),
             ('safari', "Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies"),
         ]
     elif sys.platform.startswith('win'):
         la = os.environ.get('LOCALAPPDATA', '')
         ap = os.environ.get('APPDATA', '')
         cand = [
+            ('firefox', os.path.join(ap, "Mozilla", "Firefox", "Profiles")),
             ('chrome', os.path.join(la, "Google", "Chrome", "User Data")),
             ('edge',   os.path.join(la, "Microsoft", "Edge", "User Data")),
             ('brave',  os.path.join(la, "BraveSoftware", "Brave-Browser", "User Data")),
-            ('firefox', os.path.join(ap, "Mozilla", "Firefox", "Profiles")),
         ]
     else:
         cand = [
-            ('chrome', os.path.join(home, ".config", "google-chrome")),
             ('firefox', os.path.join(home, ".mozilla", "firefox")),
+            ('chrome', os.path.join(home, ".config", "google-chrome")),
         ]
+    found = []
     for name, rel in cand:
         p = rel if os.path.isabs(rel) else os.path.join(home, rel)
         if os.path.exists(p):
-            return name
-    return None
+            found.append(name)
+    return found
 
 
 def pick_writable_tempdir(preferred):
@@ -217,7 +219,7 @@ class RobloaderApp(ctk.CTk):
         self.ffprobe_path = self._resolve_binary(ffprobe_name)
 
         self.js_runtime = has_js_runtime()
-        self.browser_cookies = detect_browser_cookies()
+        self.browsers = detect_browsers()
 
         # cookies.txt : 1er trouve (prioritaire sur les cookies navigateur).
         self.cookie_path = os.path.join(self.app_dir, "cookies.txt")
@@ -343,8 +345,8 @@ class RobloaderApp(ctk.CTk):
         bits = [f"📁 {self.download_dir}"]
         if os.path.exists(self.cookie_path):
             bits.append("cookies.txt ✓")
-        elif self.browser_cookies:
-            bits.append(f"cookies {self.browser_cookies} ✓")
+        elif self.browsers:
+            bits.append(f"cookies {'/'.join(self.browsers[:2])} ✓")
         else:
             bits.append("sans cookies (4K limitée)")
         if not self.js_runtime:
@@ -452,12 +454,18 @@ class RobloaderApp(ctk.CTk):
                 except Exception:
                     pass
 
-    def _cookie_opts(self):
+    def _cookie_attempts(self):
+        """Liste ORDONNEE d'options cookies a essayer jusqu'a ce qu'une marche, puis sans cookies.
+        cookies.txt (fichier) d'abord, puis chaque navigateur (Chrome verrouille s'il est ouvert
+        -> on enchaine sur Firefox/Edge), et enfin {} (sans cookies) en dernier recours -> jamais
+        de plantage, juste une qualite degradee si rien ne marche."""
+        attempts = []
         if os.path.exists(self.cookie_path):
-            return {'cookiefile': self.cookie_path}
-        if self.browser_cookies:
-            return {'cookiesfrombrowser': (self.browser_cookies,)}
-        return {}
+            attempts.append({'cookiefile': self.cookie_path})
+        for b in self.browsers:
+            attempts.append({'cookiesfrombrowser': (b,)})
+        attempts.append({})  # sans cookies
+        return attempts
 
     def _probe_video_codec(self, path):
         try:
@@ -515,7 +523,6 @@ class RobloaderApp(ctk.CTk):
             fb_h = 1080 if not target_h else min(target_h, 1080)
             fallback_format = format_for_height(fb_h)
             dl_remote = EJS_REMOTE_COMPONENTS if self.js_runtime else []
-            cookie_opts = self._cookie_opts()
 
             self.ui(lambda: status_lbl.configure(text="Analyse de la vidéo…", text_color=MUTED))
 
@@ -524,28 +531,31 @@ class RobloaderApp(ctk.CTk):
                 'remote_components': dl_remote, 'format': dl_format, 'format_sort': FORMAT_SORT,
             }
 
-            def _do_extract():
-                opts = dict(info_opts)
-                opts.update(cookie_opts)
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    return ydl.extract_info(url, download=False)
-
-            # Robustesse cookies : si la lecture des cookies NAVIGATEUR echoue (keychain refuse,
-            # Safari sans Full Disk Access, navigateur verrouille), on reessaie SANS cookies au lieu
-            # de planter. Un cookies.txt (fichier), lui, n'est pas concerne par ce repli.
-            try:
-                info = _do_extract()
-            except Exception:
+            # Robustesse cookies : on essaie chaque source de cookies (fichier, puis navigateurs)
+            # jusqu'a ce qu'une marche, et SANS cookies en dernier recours. Gere Chrome verrouille
+            # (yt-dlp #7271) -> bascule sur Firefox/Edge, sinon 1080p sans cookies au lieu de planter.
+            cookie_opts = {}
+            info = None
+            last_err = None
+            for i, attempt in enumerate(self._cookie_attempts()):
                 if self.active_tasks[task_id]['cancel_requested']:
-                    raise
-                if 'cookiesfrombrowser' in cookie_opts:
-                    cookie_opts = {}
+                    raise Exception("Annulé par l'utilisateur")
+                if i > 0 and attempt == {}:
                     self.ui(lambda: status_lbl.configure(
-                        text="Cookies navigateur indisponibles — analyse sans cookies…",
+                        text="Cookies indisponibles — analyse sans cookies (4K limitée)…",
                         text_color=WARN_ORANGE))
-                    info = _do_extract()
-                else:
-                    raise
+                try:
+                    opts = dict(info_opts)
+                    opts.update(attempt)
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(url, download=False)
+                    cookie_opts = attempt   # on retient la source qui a marche (pour le download)
+                    break
+                except Exception as e:
+                    last_err = e
+            if info is None:
+                raise last_err or Exception("Analyse impossible")
+
             video_title = info.get('title', 'Vidéo YouTube')
             video_id = info.get('id', 'temp')
             total_duration = info.get('duration') or 0
