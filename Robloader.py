@@ -611,6 +611,18 @@ class RobloaderApp(ctk.CTk):
             want_prores = (output == OUT_PRORES)
             audio_codec = 'mp3' if output == OUT_MP3 else 'wav'
 
+            # Options sous-titres / miniature, INTEGREES au telechargement principal (ecrites a cote
+            # du fichier pendant le DL valide -> bien plus fiable qu'un post-traitement separe).
+            extra_opts = {}
+            extra_pps = []
+            if subs:
+                extra_opts.update({'writesubtitles': True, 'writeautomaticsub': True,
+                                   'subtitleslangs': ['fr', 'en'], 'subtitlesformat': 'srt/best'})
+                extra_pps.append({'key': 'FFmpegSubtitlesConvertor', 'format': 'srt'})
+            if thumb:
+                extra_opts['writethumbnail'] = True
+                extra_pps.append({'key': 'FFmpegThumbnailsConvertor', 'format': 'jpg'})
+
             self.ui(lambda: status_lbl.configure(text="Analyse de la vidéo…", text_color=MUTED))
 
             info_opts = {
@@ -646,11 +658,14 @@ class RobloaderApp(ctk.CTk):
             video_title = info.get('title', 'Vidéo YouTube')
             video_id = info.get('id', 'temp')
             total_duration = info.get('duration') or 0
+            channel = info.get('channel') or info.get('uploader') or ''
 
             if self.active_tasks[task_id]['cancel_requested']:
                 raise Exception("Annulé par l'utilisateur")
 
             display_title = video_title
+            if channel:
+                display_title += f" - {channel}"   # ex: "Titre - AppleTrack"
             if start_str or end_str:
                 display_title += f" (Extrait {start_str or '00:00'} - {end_str or 'Fin'})"
             safe_title = "".join(c for c in display_title if c.isalpha() or c.isdigit() or c in ' .-_()').rstrip()
@@ -698,6 +713,8 @@ class RobloaderApp(ctk.CTk):
                     'postprocessors': [{'key': 'FFmpegExtractAudio',
                                         'preferredcodec': audio_codec, 'preferredquality': '192'}],
                 }
+                a_opts.update(extra_opts)
+                a_opts['postprocessors'] = a_opts['postprocessors'] + extra_pps
                 a_opts.update(cookie_opts)
                 if has_range:
                     a_opts['download_ranges'] = _ranges
@@ -713,6 +730,9 @@ class RobloaderApp(ctk.CTk):
                     'progress_hooks': [progress_hook], 'quiet': True, 'noplaylist': True,
                     'extractor_args': YOUTUBE_EXTRACTOR_ARGS, 'remote_components': dl_remote,
                 }
+                ydl_opts.update(extra_opts)
+                if extra_pps:
+                    ydl_opts['postprocessors'] = extra_pps
                 ydl_opts.update(cookie_opts)
                 if has_range:
                     ydl_opts['download_ranges'] = _ranges
@@ -796,27 +816,21 @@ class RobloaderApp(ctk.CTk):
                     if os.path.exists(temp_output):
                         os.remove(temp_output)
 
-            # Sous-titres (.srt) et/ou miniature — best-effort (ne casse jamais le téléchargement).
-            if subs or thumb:
-                self.ui(lambda: status_lbl.configure(text="Sous-titres / miniature…", text_color=MUTED))
-                base = os.path.splitext(final_output)[0]
-                s_opts = {
-                    'quiet': True, 'noplaylist': True, 'skip_download': True,
-                    'outtmpl': base + '.%(ext)s', 'ffmpeg_location': self.ffmpeg_path,
-                    'extractor_args': YOUTUBE_EXTRACTOR_ARGS, 'remote_components': dl_remote,
-                }
-                s_opts.update(cookie_opts)
-                if subs:
-                    s_opts.update({'writesubtitles': True, 'writeautomaticsub': True,
-                                   'subtitleslangs': ['fr', 'en'],
-                                   'postprocessors': [{'key': 'FFmpegSubtitlesConvertor', 'format': 'srt'}]})
-                if thumb:
-                    s_opts['writethumbnail'] = True
-                try:
-                    with yt_dlp.YoutubeDL(s_opts) as ydl:
-                        ydl.download([url])
-                except Exception:
-                    pass
+            # Sous-titres (.srt) / miniature (.jpg) ont ete ecrits a cote du fichier telecharge
+            # (basename du download). Pour la video, ce basename = temp_<id> -> on deplace les
+            # annexes vers le nom final. Pour l'audio, elles sont deja au bon nom.
+            if (subs or thumb) and not audio_mode:
+                import glob
+                src_base = os.path.splitext(temp_output)[0]   # .../temp_<id>
+                dst_base = os.path.splitext(final_output)[0]   # .../Titre - Chaine
+                for p in glob.glob(glob.escape(src_base) + '.*'):
+                    suffix = os.path.basename(p)[len(os.path.basename(src_base)):]  # ex: '.fr.srt', '.jpg'
+                    if suffix.lower() in ('.mp4', '.part', '.mov', '.webm', '.mkv'):
+                        continue
+                    try:
+                        os.replace(p, dst_base + suffix)
+                    except Exception:
+                        pass
 
             self.ui(lambda: prog_bar.set(1.0))
             if audio_mode:
