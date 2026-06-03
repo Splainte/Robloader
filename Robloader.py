@@ -106,7 +106,8 @@ OUT_HEVC = "HEVC (Premiere)"
 OUT_PRORES = "ProRes (montage)"
 OUT_MP3 = "Audio MP3"
 OUT_WAV = "Audio WAV"
-OUTPUT_FORMATS = [OUT_HEVC, OUT_PRORES, OUT_MP3, OUT_WAV]
+OUT_SUBS = "Sous-titres seuls (.srt)"
+OUTPUT_FORMATS = [OUT_HEVC, OUT_PRORES, OUT_MP3, OUT_WAV, OUT_SUBS]
 DEFAULT_OUTPUT = OUT_HEVC
 
 
@@ -609,6 +610,7 @@ class RobloaderApp(ctk.CTk):
             dl_remote = EJS_REMOTE_COMPONENTS if self.js_runtime else []
             audio_mode = output in (OUT_MP3, OUT_WAV)
             want_prores = (output == OUT_PRORES)
+            subs_only = (output == OUT_SUBS)
             audio_codec = 'mp3' if output == OUT_MP3 else 'wav'
 
             # Options sous-titres / miniature, INTEGREES au telechargement principal (ecrites a cote
@@ -673,7 +675,12 @@ class RobloaderApp(ctk.CTk):
                 safe_title = f"video_{video_id}"
             self.ui(lambda: title_lbl.configure(text=safe_title))
 
-            final_ext = audio_codec if audio_mode else ('mov' if want_prores else 'mp4')
+            if subs_only:
+                final_ext = 'srt'
+            elif audio_mode:
+                final_ext = audio_codec
+            else:
+                final_ext = 'mov' if want_prores else 'mp4'
             temp_output = os.path.join(self.download_dir, f"temp_{video_id}.mp4")
             final_output = os.path.join(self.download_dir, f"{safe_title}.{final_ext}")
             self.active_tasks[task_id]['temp_output'] = temp_output
@@ -702,7 +709,29 @@ class RobloaderApp(ctk.CTk):
             def _ranges(info_dict, yt):
                 return [{'start_time': s_val, 'end_time': e_val}]
 
-            if audio_mode:
+            if subs_only:
+                # --- Sous-titres seuls : aucun media telecharge ---
+                self.ui(lambda: status_lbl.configure(text="Téléchargement des sous-titres…", text_color=MUTED))
+                so = {
+                    'quiet': True, 'noplaylist': True, 'skip_download': True,
+                    'outtmpl': os.path.join(self.download_dir, f"{safe_title}.%(ext)s"),
+                    'ffmpeg_location': self.ffmpeg_path,
+                    'extractor_args': YOUTUBE_EXTRACTOR_ARGS, 'remote_components': dl_remote,
+                    'writesubtitles': True, 'writeautomaticsub': True,
+                    'subtitleslangs': ['fr', 'en'], 'subtitlesformat': 'srt/best',
+                    'postprocessors': [{'key': 'FFmpegSubtitlesConvertor', 'format': 'srt'}],
+                }
+                so.update(cookie_opts)
+                with yt_dlp.YoutubeDL(so) as ydl:
+                    ydl.download([url])
+                import glob
+                pat = glob.escape(os.path.join(self.download_dir, safe_title))
+                srts = sorted(glob.glob(pat + '.*.srt')) + sorted(glob.glob(pat + '.srt'))
+                if not srts:
+                    raise Exception("Aucun sous-titre disponible pour cette vidéo.")
+                final_output = srts[0]
+                self.active_tasks[task_id]['final_output'] = final_output
+            elif audio_mode:
                 # --- Audio seul (MP3/WAV) : aucun transcodage video ---
                 self.ui(lambda: status_lbl.configure(text="Téléchargement audio…", text_color=MUTED))
                 a_opts = {
@@ -819,7 +848,7 @@ class RobloaderApp(ctk.CTk):
             # Sous-titres (.srt) / miniature (.jpg) ont ete ecrits a cote du fichier telecharge
             # (basename du download). Pour la video, ce basename = temp_<id> -> on deplace les
             # annexes vers le nom final. Pour l'audio, elles sont deja au bon nom.
-            if (subs or thumb) and not audio_mode:
+            if (subs or thumb) and not audio_mode and not subs_only:
                 import glob
                 src_base = os.path.splitext(temp_output)[0]   # .../temp_<id>
                 dst_base = os.path.splitext(final_output)[0]   # .../Titre - Chaine
@@ -833,7 +862,9 @@ class RobloaderApp(ctk.CTk):
                         pass
 
             self.ui(lambda: prog_bar.set(1.0))
-            if audio_mode:
+            if subs_only:
+                done_msg = "Terminé ✓ Sous-titres (.srt)"
+            elif audio_mode:
                 done_msg = f"Terminé ✓ Audio {audio_codec.upper()}"
             elif want_prores:
                 done_msg = "Terminé ✓ ProRes (.mov)"
