@@ -1,5 +1,6 @@
 import os
 import sys
+import shutil
 import threading
 import subprocess
 import customtkinter as ctk
@@ -36,7 +37,16 @@ EJS_REMOTE_COMPONENTS = ['ejs:github']
 
 # bv*+ba/b = meilleure video + meilleur audio, sans plafond de resolution -> 1080p/4K si dispo.
 BEST_FORMAT = 'bv*+ba/b'
+# Repli quand aucun moteur JS (Deno) n'est dispo : on plafonne a 1080p, format qui ne depend pas
+# du nsig -> evite le "ffmpeg exited with code ..." sur la 4K throttlee, au lieu de planter.
+FALLBACK_FORMAT = 'bv*[height<=1080]+ba/b[height<=1080]/b'
 FORMAT_SORT = ['res', 'fps', 'br']
+
+
+def has_js_runtime():
+    """Vrai si un moteur JS (Deno) est trouvable -> requis par yt-dlp pour resoudre le nsig (4K).
+    shutil.which voit aussi un deno bundle a cote de l'exe, car son dossier est injecte dans le PATH."""
+    return shutil.which('deno') is not None
 
 
 class RobloaderApp(ctk.CTk):
@@ -63,7 +73,11 @@ class RobloaderApp(ctk.CTk):
         self.ffmpeg_path = os.path.join(self.ffmpeg_base_dir, ffmpeg_filename)
 
         # Injection du dossier de FFmpeg dans le PATH systeme
+        # (sert aussi a detecter un deno.exe bundle a cote de l'app)
         os.environ["PATH"] += os.pathsep + self.ffmpeg_base_dir
+
+        # Deno present ? -> conditionne la 4K (resolution du nsig). Sinon on plafonne a 1080p.
+        self.js_runtime = has_js_runtime()
 
         self.cookie_path = os.path.join(self.app_dir, "cookies.txt")
         self.download_dir = os.path.join(os.path.expanduser("~"), "Downloads")
@@ -100,6 +114,15 @@ class RobloaderApp(ctk.CTk):
 
         self.path_label = ctk.CTkLabel(self, text=f"Enregistrement dans : {self.download_dir}", font=("Arial", 10), text_color="gray")
         self.path_label.pack(anchor="w", padx=25, pady=(0, 10))
+
+        # Avertit si Deno manque : la 4K sera indisponible, on reste en 1080p (mais ca marche).
+        if not self.js_runtime:
+            self.warn_label = ctk.CTkLabel(
+                self,
+                text="⚠ Deno introuvable : qualité plafonnée à 1080p. Placez deno(.exe) à côté de l'app pour activer la 4K.",
+                font=("Arial", 10), text_color="#e67e22"
+            )
+            self.warn_label.pack(anchor="w", padx=25, pady=(0, 8))
 
         # --- ZONE INFÉRIEURE (LISTE DÉFILANTE) ---
         self.scroll_frame = ctk.CTkScrollableFrame(self, label_text="File d'attente des téléchargements")
@@ -243,14 +266,18 @@ class RobloaderApp(ctk.CTk):
             start_seconds = self.parse_timecode(start_str)
             end_seconds = self.parse_timecode(end_str)
 
+            # Deno present -> 4K (nsig resolu via EJS). Sinon -> repli 1080p sans nsig.
+            dl_format = BEST_FORMAT if self.js_runtime else FALLBACK_FORMAT
+            dl_remote = EJS_REMOTE_COMPONENTS if self.js_runtime else []
+
             self.ui(lambda: status_lbl.configure(text="Analyse de la video..."))
 
             # --- ETAPE 0 : recuperation des metadonnees (titre, duree) ---
             ydl_info_opts = {
                 'quiet': True,
                 'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
-                'remote_components': EJS_REMOTE_COMPONENTS,
-                'format': BEST_FORMAT,
+                'remote_components': dl_remote,
+                'format': dl_format,
                 'format_sort': FORMAT_SORT,
             }
             if os.path.exists(self.cookie_path):
@@ -291,7 +318,7 @@ class RobloaderApp(ctk.CTk):
                         self.ui(lambda p=percent: status_lbl.configure(text=f"Etape 1/2 : Telechargement... {int(p*100)}%"))
 
             ydl_opts = {
-                'format': BEST_FORMAT,
+                'format': dl_format,
                 'format_sort': FORMAT_SORT,
                 'merge_output_format': 'mp4',
                 'outtmpl': temp_output,
@@ -299,7 +326,7 @@ class RobloaderApp(ctk.CTk):
                 'progress_hooks': [progress_hook],
                 'quiet': True,
                 'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
-                'remote_components': EJS_REMOTE_COMPONENTS,
+                'remote_components': dl_remote,
             }
             if os.path.exists(self.cookie_path):
                 ydl_opts['cookiefile'] = self.cookie_path

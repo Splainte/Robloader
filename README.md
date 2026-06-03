@@ -27,7 +27,7 @@ Interface graphique sombre (CustomTkinter), file d'attente multi-téléchargemen
 | **yt-dlp** (à jour) | extraction YouTube | ✅ |
 | **customtkinter** | interface | ✅ |
 | **ffmpeg** | découpe + ré-encodage HEVC | ✅ (placé à côté du script / bundlé) |
-| **Deno** (+ scripts EJS) | résout le `nsig` du player YouTube | ⚠️ **requis pour la 4K / 1440p** (la 1080p passe sans) |
+| **Deno** (+ scripts EJS) | résout le `nsig` du player YouTube | ⚠️ **requis pour la 4K / 1440p** — sans lui, repli auto en 1080p |
 
 Installation des paquets Python :
 
@@ -68,6 +68,19 @@ Deux choses sont donc nécessaires pour la 4K :
 > ✅ Testé : `player_client` multi + `remote_components=['ejs:github']` + Deno → sélection
 > `401+258` soit **2160p (4K)**, `nsig` résolu, découpe par timecode OK. Sans Deno : warning
 > `n challenge solving failed` et 4K KO.
+
+#### Repli automatique si Deno est absent
+
+Robloader **détecte Deno au démarrage** (`shutil.which('deno')`, qui voit aussi un `deno.exe`
+posé à côté de l'app). Selon le résultat :
+
+| Deno détecté | Qualité visée | Comportement |
+|---|---|---|
+| ✅ oui | **MAX** (1080p/4K, `bv*+ba/b`) | `nsig` résolu via EJS, 4K débloquée |
+| ❌ non | **plafonnée à 1080p** | format `bv*[height<=1080]+ba/b` (sans `nsig`) → pas de plantage 4K, + un bandeau orange dans l'UI |
+
+Autrement dit : **sans Deno, l'app ne casse plus** — elle télécharge proprement en 1080p au lieu
+de planter sur la 4K. Ajouter Deno débloque la 4K sans rien changer d'autre.
 
 ### ffmpeg
 
@@ -137,3 +150,6 @@ grâce à Deno + EJS — débloque la **4K/1440p** dont les flux exigent la rés
   téléchargement pouvait figer l'app.
 - Pipeline : `yt-dlp` (téléchargement / découpe) → `ffmpeg` (ré-encodage HEVC) → fichier final ;
   le fichier temporaire `temp_<id>.mp4` est supprimé à la fin (ou en cas d'échec/annulation).
+- Qualité adaptative : `has_js_runtime()` teste la présence de Deno au démarrage ; le format visé
+  (`bv*+ba/b` ou repli `bv*[height<=1080]+ba/b`) et l'activation d'EJS en découlent. Pas de Deno =
+  pas de 4K, mais pas de crash non plus.
