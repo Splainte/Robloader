@@ -10,6 +10,7 @@ Il ne telecharge PAS la video : il interroge juste YouTube et dit ou ca coince.
 import os
 import sys
 import shutil
+import tempfile
 import subprocess
 
 # Reproduit l'injection de PATH faite par Robloader (pour detecter un deno.exe local)
@@ -40,6 +41,22 @@ if deno:
     except Exception as e:
         print(f"deno version  : erreur a l'execution -> {e}")
         deno = None
+
+# Dossier temp : cause frequente du "(Errno 13) Permission denied ...tmp" / echec 4K dans l'app
+sys_tmp = tempfile.gettempdir()
+tmp_ok = False
+try:
+    _p = tempfile.NamedTemporaryFile(delete=True)
+    _p.close()
+    tmp_ok = True
+except Exception as e:
+    tmp_err = e
+print(f"cwd           : {os.getcwd()}")
+print(f"dossier temp  : {sys_tmp}")
+print(f"temp ecrivable: {'OUI' if tmp_ok else 'NON -> ' + repr(tmp_err)}")
+if not tmp_ok or 'system32' in sys_tmp.lower():
+    print("  ⚠ Temp inutilisable : c'est CA qui fait planter la 4K dans l'app (pas le diag).")
+    print("    -> corrige par la nouvelle version (force un dossier temp inscriptible).")
 print("-" * 60)
 
 

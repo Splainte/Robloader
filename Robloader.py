@@ -1,6 +1,7 @@
 import os
 import sys
 import shutil
+import tempfile
 import threading
 import subprocess
 import customtkinter as ctk
@@ -49,6 +50,36 @@ def has_js_runtime():
     return shutil.which('deno') is not None
 
 
+def pick_writable_tempdir(preferred):
+    """Renvoie un dossier temporaire REELLEMENT accessible en ecriture.
+
+    Indispensable car, selon la facon dont l'app est lancee (admin, double-clic, exe gele), le
+    dossier temp du process peut pointer sur C:\\Windows\\system32 (non inscriptible) -> yt-dlp /
+    Deno n'y ecrivent pas leur fichier de challenge JS -> "(Errno 13) Permission denied ...tmp" et
+    la 4K casse. On teste chaque candidat par une ecriture reelle (os.access est peu fiable sous
+    Windows)."""
+    home = os.path.expanduser("~")
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    candidates = [
+        tempfile.gettempdir(),
+        os.path.join(local_appdata, "Temp") if local_appdata else None,
+        os.path.join(home, "AppData", "Local", "Temp"),
+        preferred,
+        home,
+    ]
+    for d in candidates:
+        if not d:
+            continue
+        try:
+            os.makedirs(d, exist_ok=True)
+            probe = tempfile.NamedTemporaryFile(dir=d, delete=True)
+            probe.close()
+            return d
+        except Exception:
+            continue
+    return home
+
+
 class RobloaderApp(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -81,6 +112,13 @@ class RobloaderApp(ctk.CTk):
 
         self.cookie_path = os.path.join(self.app_dir, "cookies.txt")
         self.download_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+
+        # Force un dossier temp inscriptible : sinon yt-dlp/Deno ecrivent leur fichier de challenge
+        # JS dans C:\Windows\system32 (selon le lancement) -> Permission denied -> 4K KO.
+        self.temp_dir = pick_writable_tempdir(self.download_dir)
+        tempfile.tempdir = self.temp_dir
+        os.environ["TEMP"] = self.temp_dir
+        os.environ["TMP"] = self.temp_dir
 
         # --- ZONE SUPÉRIEURE (COMMANDES ROW 1) ---
         self.top_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -327,6 +365,7 @@ class RobloaderApp(ctk.CTk):
                 'quiet': True,
                 'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
                 'remote_components': dl_remote,
+                'paths': {'temp': self.temp_dir},
             }
             if os.path.exists(self.cookie_path):
                 ydl_opts['cookiefile'] = self.cookie_path
