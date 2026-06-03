@@ -45,6 +45,29 @@ FALLBACK_FORMAT = 'bv*[height<=1080]+ba/b[height<=1080]/b'
 FORMAT_SORT = ['res', 'fps', 'br']
 
 
+def resource_search_dirs(app_dir):
+    """Dossiers ou chercher les fichiers fournis par l'utilisateur (cookies.txt, deno).
+
+    Sous macOS, dans un .app les fichiers poses "a cote de l'application" se trouvent HORS du
+    bundle (l'executable est dans Robloader.app/Contents/MacOS/). On ajoute donc le dossier qui
+    contient le .app, plus ~/Library/Application Support/Robloader et le home."""
+    dirs = [app_dir]
+    if getattr(sys, 'frozen', False) and sys.platform == 'darwin':
+        # .../Robloader.app/Contents/MacOS/<exe> -> remonter 4 niveaux = dossier contenant le .app
+        p = sys.executable
+        for _ in range(4):
+            p = os.path.dirname(p)
+        dirs.append(p)
+        dirs.append(os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Robloader"))
+    dirs.append(os.path.expanduser("~"))
+    seen, out = set(), []
+    for d in dirs:
+        if d and d not in seen:
+            seen.add(d)
+            out.append(d)
+    return out
+
+
 def has_js_runtime():
     """Vrai si un moteur JS (Deno) est trouvable -> requis par yt-dlp pour resoudre le nsig (4K).
     shutil.which voit aussi un deno bundle a cote de l'exe, car son dossier est injecte dans le PATH."""
@@ -102,16 +125,39 @@ class RobloaderApp(ctk.CTk):
             self.app_dir = self.ffmpeg_base_dir
 
         ffmpeg_filename = "ffmpeg.exe" if sys.platform.startswith("win") else "ffmpeg"
-        self.ffmpeg_path = os.path.join(self.ffmpeg_base_dir, ffmpeg_filename)
 
-        # Injection du dossier de FFmpeg dans le PATH systeme
-        # (sert aussi a detecter un deno.exe bundle a cote de l'app)
-        os.environ["PATH"] += os.pathsep + self.ffmpeg_base_dir
+        # Injection dans le PATH du dossier des binaires bundles ET des dossiers ou l'utilisateur
+        # peut poser deno/ffmpeg (a cote de l'app). Sert a la detection de Deno et ffmpeg.
+        path_dirs = [self.ffmpeg_base_dir] + resource_search_dirs(self.app_dir)
+        for d in path_dirs:
+            if d:
+                os.environ["PATH"] += os.pathsep + d
+
+        # Resolution robuste de ffmpeg : selon le packaging (PyInstaller place les binaires dans
+        # Contents/Frameworks ou Contents/MacOS), on cherche dans plusieurs dossiers puis le PATH.
+        self.ffmpeg_path = ffmpeg_filename
+        for d in path_dirs:
+            cand = os.path.join(d, ffmpeg_filename)
+            if os.path.exists(cand):
+                self.ffmpeg_path = cand
+                break
+        else:
+            found = shutil.which(ffmpeg_filename)
+            if found:
+                self.ffmpeg_path = found
 
         # Deno present ? -> conditionne la 4K (resolution du nsig). Sinon on plafonne a 1080p.
         self.js_runtime = has_js_runtime()
 
+        # cookies.txt : on prend le premier trouve parmi les emplacements plausibles (utile pour
+        # le .app macOS ou "a cote de l'app" est hors du bundle).
         self.cookie_path = os.path.join(self.app_dir, "cookies.txt")
+        for d in resource_search_dirs(self.app_dir):
+            candidate = os.path.join(d, "cookies.txt")
+            if os.path.exists(candidate):
+                self.cookie_path = candidate
+                break
+
         self.download_dir = os.path.join(os.path.expanduser("~"), "Downloads")
 
         # Force un dossier temp inscriptible : sinon yt-dlp/Deno ecrivent leur fichier de challenge

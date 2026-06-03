@@ -125,6 +125,37 @@ python Robloader.py
 
 ---
 
+## 🍎 Version macOS
+
+Le code est cross-platform (encodage `hevc_videotoolbox` sur Mac, ouverture Finder, etc.).
+Pour produire un **`Robloader.app`** :
+
+```bash
+# Sur un Mac (PyInstaller ne cross-compile pas) :
+./build_macos.sh
+open dist/Robloader.app
+```
+
+Le script (`build_macos.sh`) :
+1. détecte l'architecture (**Apple Silicon `arm64`** ou **Intel `x86_64`**) ;
+2. installe les dépendances Python (`pyinstaller`, `customtkinter`, `yt-dlp`) ;
+3. télécharge **Deno** (binaire mac de l'archi) dans `bin/` ;
+4. récupère **ffmpeg + ffprobe** (depuis Homebrew si dispo) dans `bin/` ;
+5. construit le `.app` via `Robloader.spec` (Deno + ffmpeg + ffprobe **embarqués** dans l'app).
+
+### Points d'attention macOS
+
+- **cookies.txt** : dans un `.app`, « à côté de l'app » est *hors* du bundle. Robloader cherche
+  `cookies.txt` à côté du `.app`, puis dans `~/Library/Application Support/Robloader/`, puis `~`.
+- **Gatekeeper** : l'app n'est pas signée → au 1er lancement, **clic droit ▸ Ouvrir** (ou
+  `xattr -dr com.apple.quarantine dist/Robloader.app`). Pour une vraie distribution, il faut
+  **signer + notariser** avec un compte Apple Developer (`codesign` / `notarytool`).
+- **Distribution vers d'autres Macs** : les ffmpeg/ffprobe de **Homebrew dépendent de dylibs** et
+  ne tourneront pas ailleurs. Pour distribuer, mettez des **builds statiques** dans `bin/` avant de
+  lancer le script (ex. [osxexperts.net](https://www.osxexperts.net/) pour arm64, ou un ffmpeg
+  static universel). Pour un test **sur ta propre machine**, Homebrew suffit.
+- **GPU** : l'encodage HEVC utilise `hevc_videotoolbox` (matériel Apple) ; pas de NVENC sur Mac.
+
 ## 🔧 Comment la qualité MAX est garantie
 
 YouTube sert des formats différents selon le « client » simulé — et c'est **décisif pour la 4K** :

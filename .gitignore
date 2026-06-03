@@ -3,3 +3,9 @@ __pycache__/
 cookies.txt
 temp_*.mp4
 *.mp4
+
+# Build macOS / PyInstaller
+bin/
+build/
+dist/
+*.app/
