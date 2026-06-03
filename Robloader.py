@@ -523,12 +523,32 @@ class RobloaderApp(ctk.CTk):
                 'quiet': True, 'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
                 'remote_components': dl_remote, 'format': dl_format, 'format_sort': FORMAT_SORT,
             }
-            info_opts.update(cookie_opts)
-            with yt_dlp.YoutubeDL(info_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                video_title = info.get('title', 'Vidéo YouTube')
-                video_id = info.get('id', 'temp')
-                total_duration = info.get('duration') or 0
+
+            def _do_extract():
+                opts = dict(info_opts)
+                opts.update(cookie_opts)
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    return ydl.extract_info(url, download=False)
+
+            # Robustesse cookies : si la lecture des cookies NAVIGATEUR echoue (keychain refuse,
+            # Safari sans Full Disk Access, navigateur verrouille), on reessaie SANS cookies au lieu
+            # de planter. Un cookies.txt (fichier), lui, n'est pas concerne par ce repli.
+            try:
+                info = _do_extract()
+            except Exception:
+                if self.active_tasks[task_id]['cancel_requested']:
+                    raise
+                if 'cookiesfrombrowser' in cookie_opts:
+                    cookie_opts = {}
+                    self.ui(lambda: status_lbl.configure(
+                        text="Cookies navigateur indisponibles — analyse sans cookies…",
+                        text_color=WARN_ORANGE))
+                    info = _do_extract()
+                else:
+                    raise
+            video_title = info.get('title', 'Vidéo YouTube')
+            video_id = info.get('id', 'temp')
+            total_duration = info.get('duration') or 0
 
             if self.active_tasks[task_id]['cancel_requested']:
                 raise Exception("Annulé par l'utilisateur")
