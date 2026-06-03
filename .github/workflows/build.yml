@@ -10,6 +10,10 @@ on:
 permissions:
   contents: write   # necessaire pour attacher les artefacts a la Release
 
+env:
+  # Les actions tournent encore sur Node 20 (deprecie le 16/06/2026) -> on opte pour Node 24.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   windows:
     runs-on: windows-latest
