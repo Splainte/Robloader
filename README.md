@@ -27,7 +27,7 @@ Interface graphique sombre (CustomTkinter), file d'attente multi-téléchargemen
 | **yt-dlp** (à jour) | extraction YouTube | ✅ |
 | **customtkinter** | interface | ✅ |
 | **ffmpeg** | découpe + ré-encodage HEVC | ✅ (placé à côté du script / bundlé) |
-| **Deno** | *optionnel* — accélère le `nsig` sur les vidéos longues | ❌ non requis (l'app marche sans) |
+| **Deno** (+ scripts EJS) | résout le `nsig` du player YouTube | ⚠️ **requis pour la 4K / 1440p** (la 1080p passe sans) |
 
 Installation des paquets Python :
 
@@ -38,31 +38,36 @@ pip install -U "yt-dlp[default]" customtkinter
 > ⚠️ **Garder yt-dlp à jour.** YouTube change ses protections régulièrement ; une version
 > ancienne casse l'extraction. Au besoin : `yt-dlp --update-to nightly`.
 
-### Deno (optionnel — l'app fonctionne sans)
+### Deno + scripts EJS (requis pour la 4K)
 
-**Robloader est autonome : aucun runtime externe n'est requis.** yt-dlp embarque son propre
-interpréteur JS (en Python pur) pour résoudre le `nsig` du player YouTube. Tout marche sans rien
-installer de plus.
+Depuis 2025, yt-dlp **ne résout plus le `nsig`** (le script anti-bot du player YouTube) en Python
+pur : il exécute le vrai JavaScript de YouTube via un **moteur externe (Deno)** et un **script
+solveur « EJS »**. Concrètement :
 
-Le seul bémol : sur les **vidéos très longues**, cet interpréteur Python est *lent* (quelques
-secondes à dizaines de secondes sur l'étape « Preparation »). [**Deno**](https://deno.com) exécute
-le vrai JS de YouTube et rend cette étape quasi instantanée — c'est donc un **accélérateur
-optionnel**, pas une dépendance.
+- La **1080p** vient souvent de formats AVC qui *ne demandent pas* le `nsig` → elle passe **sans Deno**.
+- La **4K / 1440p** n'existe qu'en VP9/AV1 servis par les clients web, qui **exigent** le `nsig`.
+  Sans moteur JS, ces formats sont throttlés / en 403 → typiquement `ERROR: ffmpeg exited with
+  code …` sur une connexion résidentielle. **C'est la cause du « la 4K bloque, la 1080p marche ».**
 
-Deux façons de l'utiliser, si on le souhaite :
+Deux choses sont donc nécessaires pour la 4K :
 
-- **Installation système** (le plus simple pour développer) :
-  ```bash
-  # macOS / Linux
-  curl -fsSL https://deno.land/install.sh | sh
-  # Windows (PowerShell)
-  irm https://deno.land/install.ps1 | iex
-  ```
-- **Bundlé dans l'app, comme ffmpeg** (pour garder un logiciel autonome) : placer le binaire
-  `deno` / `deno.exe` **dans le même dossier que `Robloader.py`**. L'app ajoute déjà ce dossier au
-  `PATH` au démarrage (`os.environ["PATH"] += …`), et yt-dlp détecte alors Deno automatiquement —
-  exactement le même mécanisme que pour ffmpeg. ⚠️ Deno pèse ~100 Mo, ce qui alourdit l'exécutable
-  final : à mettre en balance avec le gain de vitesse.
+1. **Deno** — installé, ou (pour garder l'app autonome) **placé à côté de l'exe comme ffmpeg**.
+   L'app ajoute déjà son dossier au `PATH` (`os.environ["PATH"] += …`), donc yt-dlp détecte un
+   `deno.exe` posé à côté automatiquement. ⚠️ ~100 Mo, ça alourdit l'exécutable.
+   ```bash
+   # macOS / Linux
+   curl -fsSL https://deno.land/install.sh | sh
+   # Windows (PowerShell)
+   irm https://deno.land/install.ps1 | iex
+   ```
+2. **Le script solveur EJS** — Robloader l'active déjà côté code via
+   `remote_components=['ejs:github']` : yt-dlp le **télécharge une seule fois** depuis GitHub puis
+   le met en cache. (Nécessite donc un accès internet au premier usage — sans objet pour un
+   téléchargeur YouTube.)
+
+> ✅ Testé : `player_client` multi + `remote_components=['ejs:github']` + Deno → sélection
+> `401+258` soit **2160p (4K)**, `nsig` résolu, découpe par timecode OK. Sans Deno : warning
+> `n challenge solving failed` et 4K KO.
 
 ### ffmpeg
 
@@ -101,12 +106,14 @@ Robloader interroge donc **plusieurs clients à la fois** et laisse yt-dlp agré
 le meilleur format **non-DRM** disponible :
 
 ```python
-player_client = ['default', '-tv', 'web_safari', 'ios']   # -tv = on retire le client DRM
-format        = 'bv*+ba/b'                                 # meilleure vidéo + meilleur audio, sans plafond
-formats       = ['missing_pot']                            # garde les formats sans PO Token
+player_client     = ['default', '-tv', 'web_safari', 'ios']   # -tv = on retire le client DRM
+format            = 'bv*+ba/b'                                 # meilleure vidéo + meilleur audio, sans plafond
+formats           = ['missing_pot']                            # garde les formats sans PO Token
+remote_components = ['ejs:github']                             # script solveur nsig -> debloque la 4K
 ```
 
-Cela évite à la fois le 360p (client mobile seul) et les blocages DRM (client TV, retiré via `-tv`).
+Cela évite le 360p (client mobile seul), les blocages DRM (client TV, retiré via `-tv`), et —
+grâce à Deno + EJS — débloque la **4K/1440p** dont les flux exigent la résolution du `nsig`.
 
 ---
 
@@ -114,7 +121,8 @@ Cela évite à la fois le 360p (client mobile seul) et les blocages DRM (client 
 
 | Symptôme | Cause | Solution |
 |---|---|---|
-| **Lent** sur « Preparation » (vidéos longues) | résolution `nsig` en Python pur | mettre yt-dlp à jour ; *si besoin de vitesse*, ajouter Deno (optionnel) |
+| **La 4K bloque / `ffmpeg exited with code …`** (mais la 1080p marche) | `nsig` non résolu → flux 4K throttlés / 403 | **installer/bundler Deno** ; le script EJS est déjà activé dans le code (`remote_components`) |
+| Bloqué / **lent** sur « Preparation » | `nsig` à résoudre + (avant) bug de threading UI | bug de threading corrigé ; mettre yt-dlp à jour ; Deno accélère |
 | Vidéo en **360p** | client mobile seul sans PO Token | déjà corrigé (stratégie multi-clients) ; garder yt-dlp à jour |
 | Erreur **DRM** | seul un format protégé était proposé | la liste multi-clients fournit une alternative non-DRM ; sinon la vidéo est réellement protégée |
 | `Sign in to confirm…` / vidéo restreinte | YouTube exige une session | fournir un `cookies.txt` |

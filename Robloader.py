@@ -25,6 +25,15 @@ YOUTUBE_EXTRACTOR_ARGS = {
     }
 }
 
+# --- Resolution du nsig (INDISPENSABLE pour la 4K / 1440p) ---
+# yt-dlp (2025+) ne resout plus le "n challenge" en Python pur : il execute le vrai script JS
+# de YouTube via un moteur externe (Deno) + un script solveur "EJS".
+#   - Deno doit etre present (installe, ou place a cote de l'exe comme ffmpeg -> detecte via le PATH).
+#   - 'ejs:github' telecharge UNE fois (puis met en cache) le script solveur depuis GitHub.
+# Sans ca : la 1080p (souvent AVC, sans nsig) passe encore, mais la 4K/1440p (VP9/AV1, web) est
+# soit absente soit throttlee/403 -> "ERROR: ffmpeg exited with code ..." sur les IP residentielles.
+EJS_REMOTE_COMPONENTS = ['ejs:github']
+
 # bv*+ba/b = meilleure video + meilleur audio, sans plafond de resolution -> 1080p/4K si dispo.
 BEST_FORMAT = 'bv*+ba/b'
 FORMAT_SORT = ['res', 'fps', 'br']
@@ -240,6 +249,7 @@ class RobloaderApp(ctk.CTk):
             ydl_info_opts = {
                 'quiet': True,
                 'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
+                'remote_components': EJS_REMOTE_COMPONENTS,
                 'format': BEST_FORMAT,
                 'format_sort': FORMAT_SORT,
             }
@@ -289,6 +299,7 @@ class RobloaderApp(ctk.CTk):
                 'progress_hooks': [progress_hook],
                 'quiet': True,
                 'extractor_args': YOUTUBE_EXTRACTOR_ARGS,
+                'remote_components': EJS_REMOTE_COMPONENTS,
             }
             if os.path.exists(self.cookie_path):
                 ydl_opts['cookiefile'] = self.cookie_path
