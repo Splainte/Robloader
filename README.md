@@ -132,6 +132,10 @@ grâce à Deno + EJS — débloque la **4K/1440p** dont les flux exigent la rés
 
 ## 🩺 Dépannage
 
+> 🔎 **En cas de souci 4K, lancez d'abord le diagnostic :** `python diag_youtube.py` (à poser dans
+> le même dossier que `Robloader.py` / `deno.exe`). Il dit en clair si Deno est détecté, si le
+> `nsig` se résout et quelle résolution sort — sans rien télécharger.
+
 | Symptôme | Cause | Solution |
 |---|---|---|
 | **La 4K bloque / `ffmpeg exited with code …`** (mais la 1080p marche) | `nsig` non résolu → flux 4K throttlés / 403 | **installer/bundler Deno** ; le script EJS est déjà activé dans le code (`remote_components`) |

@@ -351,8 +351,33 @@ class RobloaderApp(ctk.CTk):
             else:
                 segment_duration = total_duration
 
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
+            def run_download(fmt):
+                ydl_opts['format'] = fmt
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
+
+            def cleanup_partial():
+                for p in (temp_output, temp_output + ".part"):
+                    try:
+                        if p and os.path.exists(p):
+                            os.remove(p)
+                    except Exception:
+                        pass
+
+            # Auto-resilience : si le format MAX (4K) echoue (nsig non resolu -> flux throttle/403
+            # -> "ffmpeg exited with code ..."), on retombe proprement en 1080p au lieu de planter.
+            try:
+                run_download(dl_format)
+            except Exception as dl_err:
+                if self.active_tasks[task_id]['cancel_requested']:
+                    raise
+                if dl_format != FALLBACK_FORMAT:
+                    cleanup_partial()
+                    self.ui(lambda: status_lbl.configure(
+                        text="4K indisponible (nsig/Deno) — repli en 1080p...", text_color="#e67e22"))
+                    run_download(FALLBACK_FORMAT)
+                else:
+                    raise
 
             if self.active_tasks[task_id]['cancel_requested']:
                 raise Exception("Annulé par l'utilisateur")
