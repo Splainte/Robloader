@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+cookies.txt
+temp_*.mp4
+*.mp4
