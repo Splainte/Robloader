@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import os
 import sys
 import threading
@@ -196,17 +195,15 @@ class RobloaderApp(ctk.CTk):
             start_seconds = self.parse_timecode(start_str)
             end_seconds = self.parse_timecode(end_str)
             
-            # --- BOUCLIER 1 : Client iOS + missing_pot pour contourner le blocage JavaScript ET garantir la HD ---
+            # PARADE : On force le client web embarqué et on interdit formellement le client TV (DRM) et Safari
             ydl_info_opts = {
                 'quiet': True,
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['ios'],
-                        'formats': ['missing_pot']
+                        'player_client': ['default', '-tv', 'web_embedded'],
                     }
                 },
-                'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
-                'format_sort': ['res:1080', 'quality']
+                'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
             }
             if os.path.exists(self.cookie_path):
                 ydl_info_opts['cookiefile'] = self.cookie_path
@@ -244,10 +241,8 @@ class RobloaderApp(ctk.CTk):
                         prog_bar.set(percent)
                         status_lbl.configure(text=f"Etape 1/2 : Telechargement... {int(percent*100)}%")
 
-            # Re-application du Bouclier 1 pour le telechargement effectif
             ydl_opts = {
-                'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
-                'format_sort': ['res:1080', 'quality'],
+                'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
                 'merge_output_format': 'mp4',
                 'outtmpl': temp_output,
                 'ffmpeg_location': self.ffmpeg_path,
@@ -255,8 +250,7 @@ class RobloaderApp(ctk.CTk):
                 'quiet': True,
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['ios'],
-                        'formats': ['missing_pot']
+                        'player_client': ['default', '-tv', 'web_embedded'],
                     }
                 }
             }
@@ -272,9 +266,7 @@ class RobloaderApp(ctk.CTk):
                         'end_time': e_val
                     }
                 ]
-                # --- BOUCLIER 2 : Interdiction a FFmpeg d'aller sur internet pour eviter l'Erreur 403 ---
                 ydl_opts['force_keyframes_at_cuts'] = False 
-                
                 segment_duration = max(e_val - s_val, 1)
             else:
                 segment_duration = total_duration
@@ -368,375 +360,4 @@ class RobloaderApp(ctk.CTk):
 
 if __name__ == "__main__":
     app = RobloaderApp()
-=======
-import os
-import sys
-import threading
-import subprocess
-import customtkinter as ctk
-from tkinter import filedialog
-import yt_dlp
-
-class RobloaderApp(ctk.CTk):
-    def __init__(self):
-        super().__init__()
-
-        self.title("Robloader - Youtube vers h265")
-        self.geometry("750x550")
-        self.resizable(False, False)
-        
-        # Suivi des taches pour la gestion de l'annulation
-        self.task_counter = 0
-        self.active_tasks = {}
-        
-        # --- CONFIGURATION DU CHEMIN DE BASE ---
-        if getattr(sys, 'frozen', False):
-            self.ffmpeg_base_dir = sys._MEIPASS
-            self.app_dir = os.path.dirname(sys.executable)
-        else:
-            self.ffmpeg_base_dir = os.path.dirname(os.path.abspath(__file__))
-            self.app_dir = self.ffmpeg_base_dir
-            
-        ffmpeg_filename = "ffmpeg.exe" if sys.platform.startswith("win") else "ffmpeg"
-        self.ffmpeg_path = os.path.join(self.ffmpeg_base_dir, ffmpeg_filename)
-        
-        # Injection du dossier de FFmpeg dans le PATH systeme
-        os.environ["PATH"] += os.pathsep + self.ffmpeg_base_dir
-        
-        self.cookie_path = os.path.join(self.app_dir, "cookies.txt")
-        self.download_dir = os.path.join(os.path.expanduser("~"), "Downloads")
-
-        # --- ZONE SUPÉRIEURE (COMMANDES ROW 1) ---
-        self.top_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.top_frame.pack(pady=(20, 5), padx=20, fill="x")
-
-        self.url_entry = ctk.CTkEntry(self.top_frame, placeholder_text="Collez le lien YouTube ici...", width=400)
-        self.url_entry.pack(side="left", padx=5)
-
-        self.folder_btn = ctk.CTkButton(self.top_frame, text="Destination", width=110, fg_color="#4A4A4A", hover_color="#5A5A5A", command=self.choose_folder)
-        self.folder_btn.pack(side="left", padx=5)
-
-        self.download_btn = ctk.CTkButton(self.top_frame, text="Telecharger", width=120, fg_color="#1f538d", font=("Arial", 12, "bold"), command=self.start_download_thread)
-        self.download_btn.pack(side="left", padx=5)
-
-        # --- ZONE TIMECODE (ROW 2) ---
-        self.time_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.time_frame.pack(pady=(0, 5), padx=20, fill="x")
-
-        self.start_lbl = ctk.CTkLabel(self.time_frame, text="Debut :", font=("Arial", 11, "bold"))
-        self.start_lbl.pack(side="left", padx=(5, 2))
-        self.start_entry = ctk.CTkEntry(self.time_frame, placeholder_text="00:00", width=70)
-        self.start_entry.pack(side="left", padx=(0, 15))
-
-        self.end_lbl = ctk.CTkLabel(self.time_frame, text="Fin :", font=("Arial", 11, "bold"))
-        self.end_lbl.pack(side="left", padx=(5, 2))
-        self.end_entry = ctk.CTkEntry(self.time_frame, placeholder_text="Ex: 01:30", width=70)
-        self.end_entry.pack(side="left", padx=(0, 15))
-        
-        self.time_hint_lbl = ctk.CTkLabel(self.time_frame, text="(Optionnel. Format MM:SS ou HH:MM:SS)", font=("Arial", 10), text_color="gray")
-        self.time_hint_lbl.pack(side="left", padx=5)
-
-        self.path_label = ctk.CTkLabel(self, text=f"Enregistrement dans : {self.download_dir}", font=("Arial", 10), text_color="gray")
-        self.path_label.pack(anchor="w", padx=25, pady=(0, 10))
-
-        # --- ZONE INFÉRIEURE (LISTE DÉFILANTE) ---
-        self.scroll_frame = ctk.CTkScrollableFrame(self, label_text="File d'attente des téléchargements")
-        self.scroll_frame.pack(padx=20, pady=10, fill="both", expand=True)
-
-    def choose_folder(self):
-        folder = filedialog.askdirectory(initialdir=self.download_dir)
-        if folder:
-            self.download_dir = folder
-            self.path_label.configure(text=f"Enregistrement dans : {self.download_dir}")
-
-    def parse_timecode(self, tc_str):
-        if not tc_str or not tc_str.strip():
-            return None
-        parts = tc_str.strip().split(':')
-        try:
-            if len(parts) == 1:
-                return float(parts[0])
-            elif len(parts) == 2:
-                return int(parts[0]) * 60 + float(parts[1])
-            elif len(parts) == 3:
-                return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
-        except ValueError:
-            return None
-        return None
-
-    def start_download_thread(self):
-        url = self.url_entry.get().strip()
-        if not url:
-            return
-        
-        start_val = self.start_entry.get().strip()
-        end_val = self.end_entry.get().strip()
-        
-        self.url_entry.delete(0, "end")
-        self.start_entry.delete(0, "end")
-        self.end_entry.delete(0, "end")
-        
-        self.task_counter += 1
-        task_id = self.task_counter
-        
-        task_frame = ctk.CTkFrame(self.scroll_frame, fg_color="#2B2B2B")
-        task_frame.pack(fill="x", pady=5, padx=5)
-
-        title_label = ctk.CTkLabel(task_frame, text="Analyse du lien...", font=("Arial", 12, "bold"), anchor="w")
-        title_label.pack(fill="x", padx=10, pady=(5, 0))
-
-        status_label = ctk.CTkLabel(task_frame, text="Preparation...", font=("Arial", 10), text_color="#A0A0A0", anchor="w")
-        status_label.pack(fill="x", padx=10)
-
-        progress_bar = ctk.CTkProgressBar(task_frame)
-        progress_bar.pack(fill="x", padx=10, pady=5)
-        progress_bar.set(0)
-
-        action_btn = ctk.CTkButton(
-            task_frame, 
-            text="Annuler", 
-            width=120, 
-            fg_color="#FFFFFF", 
-            text_color="#000000", 
-            hover_color="#E0E0E0",
-            command=lambda: self.cancel_task(task_id)
-        )
-        action_btn.pack(side="right", padx=10, pady=5)
-
-        self.active_tasks[task_id] = {
-            'cancel_requested': False,
-            'process': None,
-            'action_btn': action_btn,
-            'status_label': status_label,
-            'progress_bar': progress_bar,
-            'temp_output': None,
-            'final_output': None
-        }
-
-        thread = threading.Thread(target=self.download_pipeline, args=(url, start_val, end_val, task_id, title_label, status_label, progress_bar, action_btn))
-        thread.start()
-
-    def cancel_task(self, task_id):
-        if task_id in self.active_tasks:
-            self.active_tasks[task_id]['cancel_requested'] = True
-            self.active_tasks[task_id]['status_label'].configure(text="Annulation en cours...", text_color="#e67e22")
-            process = self.active_tasks[task_id]['process']
-            if process:
-                try:
-                    process.terminate()
-                except:
-                    pass
-
-    def run_ffmpeg_with_progress(self, cmd, duration, task_id, status_lbl, prog_bar, step_text):
-        startupinfo = None
-        if sys.platform.startswith("win"):
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-
-        process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, 
-            universal_newlines=True, encoding='utf-8', startupinfo=startupinfo
-        )
-
-        self.active_tasks[task_id]['process'] = process
-
-        for line in process.stdout:
-            if self.active_tasks[task_id]['cancel_requested']:
-                process.terminate()
-                break
-                
-            if 'out_time_us=' in line:
-                try:
-                    time_us = int(line.split('=')[1].strip())
-                    if duration > 0:
-                        percent = time_us / (duration * 1000000)
-                        percent = min(max(percent, 0.0), 1.0)
-                        prog_bar.set(percent)
-                        status_lbl.configure(text=f"{step_text} {int(percent * 100)}%")
-                except:
-                    pass
-
-        process.wait()
-        return process.returncode
-
-    def download_pipeline(self, url, start_str, end_str, task_id, title_lbl, status_lbl, prog_bar, action_btn):
-        temp_output = None
-        final_output = None
-        try:
-            start_seconds = self.parse_timecode(start_str)
-            end_seconds = self.parse_timecode(end_str)
-            
-            # --- BOUCLIER 1 : Client iOS + missing_pot pour contourner le blocage JavaScript ET garantir la HD ---
-            ydl_info_opts = {
-                'quiet': True,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['ios'],
-                        'formats': ['missing_pot']
-                    }
-                },
-                'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
-                'format_sort': ['res:1080', 'quality']
-            }
-            if os.path.exists(self.cookie_path):
-                ydl_info_opts['cookiefile'] = self.cookie_path
-
-            with yt_dlp.YoutubeDL(ydl_info_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                video_title = info.get('title', 'Video YouTube')
-                video_id = info.get('id', 'temp')
-                total_duration = info.get('duration', 0)
-            
-            if self.active_tasks[task_id]['cancel_requested']:
-                raise Exception("Annulé par l'utilisateur")
-
-            display_title = video_title
-            if start_str or end_str:
-                display_title += f" (Extrait {start_str if start_str else '00:00'} - {end_str if end_str else 'Fin'})"
-
-            safe_title = "".join([c for c in display_title if c.isalpha() or c.isdigit() or c in ' .-_()']).rstrip()
-            title_lbl.configure(text=safe_title)
-            
-            temp_output = os.path.join(self.download_dir, f"temp_{video_id}.mp4")
-            final_output = os.path.join(self.download_dir, f"{safe_title}.mp4")
-            
-            self.active_tasks[task_id]['temp_output'] = temp_output
-            self.active_tasks[task_id]['final_output'] = final_output
-
-            def progress_hook(d):
-                if self.active_tasks[task_id]['cancel_requested']:
-                    raise Exception("Annulé par l'utilisateur")
-                if d['status'] == 'downloading':
-                    total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
-                    downloaded = d.get('downloaded_bytes', 0)
-                    if total > 0:
-                        percent = downloaded / total
-                        prog_bar.set(percent)
-                        status_lbl.configure(text=f"Etape 1/2 : Telechargement... {int(percent*100)}%")
-
-            # Re-application du Bouclier 1 pour le telechargement effectif
-            ydl_opts = {
-                'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
-                'format_sort': ['res:1080', 'quality'],
-                'merge_output_format': 'mp4',
-                'outtmpl': temp_output,
-                'ffmpeg_location': self.ffmpeg_path,
-                'progress_hooks': [progress_hook],
-                'quiet': True,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['ios'],
-                        'formats': ['missing_pot']
-                    }
-                }
-            }
-            if os.path.exists(self.cookie_path):
-                ydl_opts['cookiefile'] = self.cookie_path
-
-            if start_seconds is not None or end_seconds is not None:
-                s_val = start_seconds if start_seconds is not None else 0
-                e_val = end_seconds if end_seconds is not None else total_duration
-                ydl_opts['download_ranges'] = lambda info_dict, yt_instance: [
-                    {
-                        'start_time': s_val, 
-                        'end_time': e_val
-                    }
-                ]
-                # --- BOUCLIER 2 : Interdiction a FFmpeg d'aller sur internet pour eviter l'Erreur 403 ---
-                ydl_opts['force_keyframes_at_cuts'] = False 
-                
-                segment_duration = max(e_val - s_val, 1)
-            else:
-                segment_duration = total_duration
-
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
-
-            if self.active_tasks[task_id]['cancel_requested']:
-                raise Exception("Annulé par l'utilisateur")
-
-            status_lbl.configure(text="Etape 2/2 : Conversion Premiere Pro (HEVC)...")
-            prog_bar.set(0)
-
-            if sys.platform.startswith("darwin"):
-                encoder_args = ['-c:v', 'hevc_videotoolbox', '-q:v', '65']
-            else:
-                encoder_args = ['-c:v', 'hevc_nvenc', '-rc', 'vbr', '-cq', '18', '-pix_fmt', 'yuv420p']
-
-            ffmpeg_cmd = [
-                self.ffmpeg_path, '-y', '-progress', 'pipe:1', '-i', temp_output
-            ] + encoder_args + ['-c:a', 'aac', '-b:a', '256k', final_output]
-
-            return_code = self.run_ffmpeg_with_progress(
-                ffmpeg_cmd, segment_duration, task_id, status_lbl, prog_bar, 
-                "Etape 2/2 : Conversion GPU (Optimisee)..."
-            )
-
-            if self.active_tasks[task_id]['cancel_requested']:
-                raise Exception("Annulé par l'utilisateur")
-
-            if return_code != 0:
-                status_lbl.configure(text="GPU non disponible. Bascule sur l'encodage CPU...")
-                prog_bar.set(0)
-                
-                cpu_encoder_args = ['-c:v', 'libx265', '-crf', '18', '-preset', 'fast']
-                ffmpeg_cmd_cpu = [
-                    self.ffmpeg_path, '-y', '-progress', 'pipe:1', '-i', temp_output
-                ] + cpu_encoder_args + ['-c:a', 'aac', '-b:a', '256k', final_output]
-                
-                return_code_cpu = self.run_ffmpeg_with_progress(
-                    ffmpeg_cmd_cpu, segment_duration, task_id, status_lbl, prog_bar, 
-                    "Etape 2/2 : Conversion CPU (Secours)..."
-                )
-                
-                if self.active_tasks[task_id]['cancel_requested']:
-                    raise Exception("Annulé par l'utilisateur")
-                if return_code_cpu != 0:
-                    raise Exception("Le transcodage video a echoue.")
-
-            if os.path.exists(temp_output):
-                os.remove(temp_output)
-
-            prog_bar.set(1.0)
-            status_lbl.configure(text="Termine ! Fichier pret pour Premiere Pro.", text_color="#2ecc71")
-            
-            action_btn.configure(
-                text="Ouvrir le dossier", state="normal", fg_color="#27ae60", 
-                hover_color="#2ecc71", text_color="#FFFFFF",
-                command=lambda: self.open_file_folder(final_output)
-            )
-
-        except Exception as e:
-            if self.active_tasks[task_id]['cancel_requested']:
-                status_lbl.configure(text="Telechargement annulé par l'utilisateur.", text_color="#e67e22")
-                action_btn.configure(text="Annulé", state="disabled", fg_color="#3A3A3A", text_color="#A0A0A0")
-            else:
-                status_lbl.configure(text=f"Erreur : {str(e)}", text_color="#e74c3c")
-                action_btn.configure(text="Echec", state="disabled", fg_color="#3A3A3A", text_color="#A0A0A0")
-            
-            prog_bar.set(0)
-            
-            try:
-                if temp_output and os.path.exists(temp_output):
-                    os.remove(temp_output)
-                if final_output and os.path.exists(final_output):
-                    os.remove(final_output)
-                if temp_output and os.path.exists(temp_output + ".part"):
-                    os.remove(temp_output + ".part")
-            except:
-                pass
-        
-        finally:
-            if task_id in self.active_tasks:
-                del self.active_tasks[task_id]
-
-    def open_file_folder(self, path):
-        if sys.platform.startswith("win"):
-            subprocess.run(["explorer", "/select,", os.path.normpath(path)])
-        elif sys.platform.startswith("darwin"):
-            subprocess.run(["open", "-R", path])
-
-if __name__ == "__main__":
-    app = RobloaderApp()
->>>>>>> 9a11827b636eb177597668a7fceaaeccff25a1e4
     app.mainloop()
