@@ -1,17 +1,26 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller spec — Robloader (.app macOS)
-# Build : ./build_macos.sh   (qui remplit bin/ puis lance : pyinstaller Robloader.spec)
+# PyInstaller spec — Robloader (cross-platform : .app macOS / dossier .exe Windows)
+# Build : ./build_macos.sh (mac)  ou  build_windows.ps1 (Windows). Remplissent bin/ puis lancent
+# pyinstaller Robloader.spec.
 import os
+import sys
 from PyInstaller.utils.hooks import collect_data_files
 
-# Binaires embarques (deposes dans bin/ par build_macos.sh). 'dst="."' -> racine du bundle,
-# que le code retrouve via la resolution robuste de ffmpeg + l'injection PATH.
-_wanted = [('bin/ffmpeg', '.'), ('bin/ffprobe', '.'), ('bin/deno', '.')]
-binaries = [(src, dst) for (src, dst) in _wanted if os.path.exists(src)]
+IS_MAC = sys.platform == 'darwin'
+IS_WIN = sys.platform.startswith('win')
+
+# Binaires embarques : tout ce que le script de build a depose dans bin/ (ffmpeg, ffprobe, deno,
+# avec ou sans .exe). 'dst="."' -> racine ; le code les retrouve via resolution robuste + PATH.
+binaries = []
+if os.path.isdir('bin'):
+    binaries = [(os.path.join('bin', f), '.') for f in os.listdir('bin')]
 
 # customtkinter embarque des assets (themes, polices) + nos icones.
 _icons = [(f, '.') for f in ('logo.png', 'logo.icns', 'logo.ico') if os.path.exists(f)]
 datas = collect_data_files('customtkinter') + _icons
+
+_exe_icon = 'logo.icns' if (IS_MAC and os.path.exists('logo.icns')) else \
+            ('logo.ico' if os.path.exists('logo.ico') else None)
 
 a = Analysis(
     ['Robloader.py'],
@@ -39,7 +48,8 @@ exe = EXE(
     upx=False,
     console=False,            # app fenetree (pas de terminal)
     argv_emulation=False,     # desactive (source de soucis de demarrage, inutile ici)
-    target_arch=None,         # arch courante (arm64 ou x86_64)
+    target_arch=None,         # arch courante
+    icon=_exe_icon,
 )
 
 coll = COLLECT(
@@ -51,14 +61,16 @@ coll = COLLECT(
     name='Robloader',
 )
 
-app = BUNDLE(
-    coll,
-    name='Robloader.app',
-    icon='logo.icns' if os.path.exists('logo.icns') else None,
-    bundle_identifier='fr.humanoid.robloader',
-    info_plist={
-        'NSHighResolutionCapable': True,
-        'LSMinimumSystemVersion': '11.0',
-        'CFBundleShortVersionString': '1.0.0',
-    },
-)
+# macOS : on emballe en .app. Windows/Linux : le dossier dist/Robloader/ contient Robloader(.exe).
+if IS_MAC:
+    app = BUNDLE(
+        coll,
+        name='Robloader.app',
+        icon='logo.icns' if os.path.exists('logo.icns') else None,
+        bundle_identifier='fr.humanoid.robloader',
+        info_plist={
+            'NSHighResolutionCapable': True,
+            'LSMinimumSystemVersion': '11.0',
+            'CFBundleShortVersionString': '1.0.0',
+        },
+    )
