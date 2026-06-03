@@ -27,7 +27,7 @@ Interface graphique sombre (CustomTkinter), file d'attente multi-téléchargemen
 | **yt-dlp** (à jour) | extraction YouTube | ✅ |
 | **customtkinter** | interface | ✅ |
 | **ffmpeg** | découpe + ré-encodage HEVC | ✅ (placé à côté du script / bundlé) |
-| **Deno** | accélère le calcul du `nsig` (anti-blocage « Preparation ») | ⭐ fortement recommandé |
+| **Deno** | *optionnel* — accélère le `nsig` sur les vidéos longues | ❌ non requis (l'app marche sans) |
 
 Installation des paquets Python :
 
@@ -38,19 +38,31 @@ pip install -U "yt-dlp[default]" customtkinter
 > ⚠️ **Garder yt-dlp à jour.** YouTube change ses protections régulièrement ; une version
 > ancienne casse l'extraction. Au besoin : `yt-dlp --update-to nightly`.
 
-### Deno (recommandé)
+### Deno (optionnel — l'app fonctionne sans)
 
-Sur les **vidéos longues**, yt-dlp doit résoudre le `nsig` (un gros script JS du player YouTube).
-En Python pur c'est lent → l'app peut rester longtemps sur « Preparation ». Installer
-[**Deno**](https://deno.com) fait que yt-dlp l'utilise comme moteur JS et rend cette étape quasi
-instantanée.
+**Robloader est autonome : aucun runtime externe n'est requis.** yt-dlp embarque son propre
+interpréteur JS (en Python pur) pour résoudre le `nsig` du player YouTube. Tout marche sans rien
+installer de plus.
 
-```bash
-# macOS / Linux
-curl -fsSL https://deno.land/install.sh | sh
-# Windows (PowerShell)
-irm https://deno.land/install.ps1 | iex
-```
+Le seul bémol : sur les **vidéos très longues**, cet interpréteur Python est *lent* (quelques
+secondes à dizaines de secondes sur l'étape « Preparation »). [**Deno**](https://deno.com) exécute
+le vrai JS de YouTube et rend cette étape quasi instantanée — c'est donc un **accélérateur
+optionnel**, pas une dépendance.
+
+Deux façons de l'utiliser, si on le souhaite :
+
+- **Installation système** (le plus simple pour développer) :
+  ```bash
+  # macOS / Linux
+  curl -fsSL https://deno.land/install.sh | sh
+  # Windows (PowerShell)
+  irm https://deno.land/install.ps1 | iex
+  ```
+- **Bundlé dans l'app, comme ffmpeg** (pour garder un logiciel autonome) : placer le binaire
+  `deno` / `deno.exe` **dans le même dossier que `Robloader.py`**. L'app ajoute déjà ce dossier au
+  `PATH` au démarrage (`os.environ["PATH"] += …`), et yt-dlp détecte alors Deno automatiquement —
+  exactement le même mécanisme que pour ffmpeg. ⚠️ Deno pèse ~100 Mo, ce qui alourdit l'exécutable
+  final : à mettre en balance avec le gain de vitesse.
 
 ### ffmpeg
 
@@ -102,7 +114,7 @@ Cela évite à la fois le 360p (client mobile seul) et les blocages DRM (client 
 
 | Symptôme | Cause | Solution |
 |---|---|---|
-| Bloqué sur **« Preparation »** sur les vidéos longues | résolution `nsig` lente en Python pur | **Installer Deno** + mettre yt-dlp à jour |
+| **Lent** sur « Preparation » (vidéos longues) | résolution `nsig` en Python pur | mettre yt-dlp à jour ; *si besoin de vitesse*, ajouter Deno (optionnel) |
 | Vidéo en **360p** | client mobile seul sans PO Token | déjà corrigé (stratégie multi-clients) ; garder yt-dlp à jour |
 | Erreur **DRM** | seul un format protégé était proposé | la liste multi-clients fournit une alternative non-DRM ; sinon la vidéo est réellement protégée |
 | `Sign in to confirm…` / vidéo restreinte | YouTube exige une session | fournir un `cookies.txt` |
