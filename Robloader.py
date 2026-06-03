@@ -9,19 +9,21 @@ from tkinter import filedialog
 import yt_dlp
 
 # --- Strategie d'extraction YouTube (2026) ---
-# Choix des "clients" YouTube, determinant pour avoir la 4K SANS se faire bloquer :
-#   - tv  : c'est le SEUL client qui sert la 4K/1440p SANS exiger de PO Token. Les clients web
-#           (web/web_safari) servent aussi de la 4K mais "MISSING POT" -> HTTP 403 sur une IP
-#           residentielle. D'ou le bug "la 4K bloque" quand on excluait tv.
-#   - ios : filet de secours bas/moyen (mobile, pas de PoT) si tv echoue (ex: video DRM).
-# Les rares formats DRM (tv) sont automatiquement ecartes par yt-dlp (has_drm) ; on retombe alors
-# sur un format non-DRM, et en dernier recours sur le repli 1080p (voir FALLBACK_FORMAT).
+# La 4K est un casse-tete car YouTube applique DEUX protections selon le client :
+#   - web / web_embedded : servent la 4K mais exigent un PO Token -> HTTP 403 sur IP residentielle
+#                          SAUF si on est authentifie (cookies.txt) -> alors la 4K passe.
+#   - tv                 : 4K sans PO Token, MAIS certaines sessions tombent dans une experimentation
+#                          YouTube qui colle du DRM a tout sur tv (issue yt-dlp #12563) -> 4K KO.
+#   - ios                : filet de secours (mobile, ni PoT ni DRM, mais pas de 4K).
+# On liste donc plusieurs clients ; yt-dlp ecarte seul les formats DRM (has_drm) et on garde le
+# repli 1080p (FALLBACK_FORMAT). Pour une 4K FIABLE sur une session filtree : fournir un cookies.txt
+# (voir README) -> le client web_embedded delivre alors la 4K sans 403.
 # 'missing_pot' = ne pas jeter d'emblee les formats sans PO Token.
 #
 # IMPORTANT : la 4K exige aussi la resolution du nsig -> Deno + remote_components (voir plus bas).
 YOUTUBE_EXTRACTOR_ARGS = {
     'youtube': {
-        'player_client': ['tv', 'ios'],
+        'player_client': ['web_embedded', 'tv', 'ios'],
         'formats': ['missing_pot'],
     }
 }

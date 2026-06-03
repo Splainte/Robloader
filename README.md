@@ -90,11 +90,25 @@ trouver **dans le même dossier que `Robloader.py`** (ou être inclus par PyInst
 `ffprobe not found ... Unable to extract metadata`. Il est livré dans la **même archive** que
 ffmpeg.
 
-### cookies.txt (optionnel)
+### cookies.txt (clé de la 4K sur certaines sessions)
 
-Pour les vidéos privées / soumises à une limite d'âge, exportez vos cookies YouTube au format
-Netscape dans un fichier `cookies.txt` placé à côté de l'exécutable. Robloader le détecte
-automatiquement.
+Au-delà des vidéos privées / limitées en âge, le `cookies.txt` est **le déblocage le plus fiable
+pour la 4K**. Pourquoi : YouTube protège les flux 4K de deux façons selon le client —
+
+- le client **`tv`** peut tomber dans une **expérimentation DRM** (DRM appliqué à tout —
+  [yt-dlp #12563](https://github.com/yt-dlp/yt-dlp/issues/12563)) → 4K écartée ;
+- les clients **web** servent la 4K mais exigent un **PO Token** → `HTTP 403` sur IP résidentielle.
+
+**Être authentifié (cookies) fait sauter ces deux verrous** : le client web devient « de confiance »
+et délivre la 4K sans 403. C'est plus simple qu'un serveur de PO Token.
+
+**Comment faire** : avec une extension navigateur type *« Get cookies.txt LOCALLY »*, connecté à
+YouTube, exportez au format Netscape dans un fichier **`cookies.txt`** placé **à côté de l'app**.
+Robloader (et `diag_youtube.py`) le détectent automatiquement.
+
+> 🧩 Alternative lourde si les cookies ne suffisent pas : un **fournisseur de PO Token**
+> ([bgutil-ytdlp-pot-provider](https://github.com/Brainicism/bgutil-ytdlp-pot-provider)), à faire
+> tourner en parallèle. Plus robuste, mais ce n'est plus une app autonome.
 
 ---
 
@@ -118,19 +132,19 @@ YouTube sert des formats différents selon le « client » simulé — et c'est 
 - `ios` / `android` **seuls** → souvent limités au **360p**.
 - `web` / `web_safari` → servent de la 4K, mais **marquée `MISSING POT`** : sans PO Token, le
   serveur renvoie **HTTP 403** sur une connexion résidentielle (le flux ne se télécharge pas).
-- **`tv`** → sert la **4K / 1440p SANS PO Token** : c'est la seule source 4K fiable sans serveur
-  externe. Ses rares formats DRM sont automatiquement écartés par yt-dlp.
+- **`web_embedded`** → sert la 4K (idéal **avec cookies**, voir plus haut).
+- **`tv`** → 4K sans PO Token, sauf si la session est dans l'**expérimentation DRM** (#12563).
 
 ```python
-player_client     = ['tv', 'ios']     # tv = 4K sans PO Token ; ios = filet de secours
-format            = 'bv*+ba/b'        # meilleure vidéo + meilleur audio, sans plafond
-formats           = ['missing_pot']   # ne jette pas d'emblée les formats sans PoT
-remote_components = ['ejs:github']    # script solveur nsig (via Deno) -> indispensable 4K
+player_client     = ['web_embedded', 'tv', 'ios']   # 4K via web_embedded (cookies) ou tv ; ios = secours
+format            = 'bv*+ba/b'                       # meilleure vidéo + meilleur audio, sans plafond
+formats           = ['missing_pot']                  # ne jette pas d'emblée les formats sans PoT
+remote_components = ['ejs:github']                   # script solveur nsig (via Deno) -> indispensable 4K
 ```
 
-⚠️ **Le piège** : exclure `tv` (ce qu'on faisait pour éviter le DRM) supprime la seule 4K
-sans PoT → il ne reste que la 4K `web` → **403**. La bonne approche est de **garder `tv`** et de
-laisser yt-dlp ignorer les formats DRM.
+⚠️ **Aucune combinaison de clients ne garantit la 4K à elle seule** quand une session cumule
+DRM-sur-`tv` **et** PoT-sur-`web`. Le vrai déblocage est alors **`cookies.txt`** (voir la section
+dédiée). À défaut, yt-dlp écarte le DRM, le 403 déclenche le repli, et on obtient du **1080p propre**.
 
 ---
 
@@ -142,7 +156,7 @@ laisser yt-dlp ignorer les formats DRM.
 
 | Symptôme | Cause | Solution |
 |---|---|---|
-| **La 4K → `HTTP 403 Forbidden`** puis repli 1080p | flux 4K `web` qui exige un PO Token (IP résidentielle) | utiliser le client **`tv`** (déjà fait : 4K sans PoT) ; si ça persiste, ajouter un `cookies.txt` |
+| **La 4K → `HTTP 403`** ou **`DRM protected` sur tv (#12563)** puis repli 1080p | session filtrée : `web` exige un PoT, `tv` est sous expérimentation DRM | **ajouter un `cookies.txt`** (déblocage le plus fiable) ; sinon fournisseur de PO Token |
 | **`Permission denied …\system32\…tmp`** | dossier temp non inscriptible (app lancée en admin) | corrigé : l'app force un dossier temp valide au démarrage |
 | **`ffprobe not found`** | seul `ffmpeg.exe` est présent | ajouter **`ffprobe.exe`** à côté (même archive ffmpeg) |
 | **La 4K bloque / `ffmpeg exited with code …`** | `nsig` non résolu (pas de moteur JS) | **installer/bundler Deno** ; EJS déjà activé dans le code |

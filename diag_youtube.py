@@ -32,6 +32,10 @@ except Exception as e:
     print(">>> Installez/maj : pip install -U yt-dlp")
     sys.exit(1)
 
+COOKIES = os.path.join(HERE, "cookies.txt")
+has_cookies = os.path.exists(COOKIES)
+print(f"cookies.txt   : {'OUI' if has_cookies else 'non (ajoutez-en un si la 4K reste en 403)'}")
+
 deno = shutil.which("deno")
 print(f"deno detecte  : {deno or 'NON'}")
 if deno:
@@ -80,12 +84,14 @@ opts = {
     "logger": log,
     "remote_components": ["ejs:github"],
     "extractor_args": {"youtube": {
-        "player_client": ["tv", "ios"],
+        "player_client": ["web_embedded", "tv", "ios"],
         "formats": ["missing_pot"],
     }},
     "format": "bv*+ba/b",
     "format_sort": ["res", "fps", "br"],
 }
+if has_cookies:
+    opts["cookiefile"] = COOKIES
 
 print("Interrogation de YouTube (config Robloader)...")
 try:
@@ -126,6 +132,8 @@ try:
         "download_ranges": lambda i, y: [{"start_time": 0, "end_time": 2}],
         "force_keyframes_at_cuts": False,
     }
+    if has_cookies:
+        dlopts["cookiefile"] = COOKIES
     try:
         with yt_dlp.YoutubeDL(dlopts) as y:
             y.download([URL])
