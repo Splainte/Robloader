@@ -22,7 +22,9 @@ if (-not (Test-Path bin\deno.exe)) {
 # 3) ffmpeg + ffprobe statiques (BtbN, autonomes)
 if ((-not (Test-Path bin\ffmpeg.exe)) -or (-not (Test-Path bin\ffprobe.exe))) {
     Write-Host "-> ffmpeg/ffprobe statiques..."
-    Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip" -OutFile "$env:TEMP\ff.zip"
+    # NB : BtbN tague sa release "latest" en PRE-RELEASE -> le mot magique releases/latest/download
+    # renvoie 404 (GitHub ne resout pas une pre-release). On vise le tag litteral : releases/download/latest.
+    Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -OutFile "$env:TEMP\ff.zip"
     Expand-Archive -Force "$env:TEMP\ff.zip" -DestinationPath "$env:TEMP\ff"
     $ffbin = Get-ChildItem -Path "$env:TEMP\ff" -Recurse -Filter ffmpeg.exe | Select-Object -First 1
     Copy-Item $ffbin.FullName bin\ffmpeg.exe -Force
