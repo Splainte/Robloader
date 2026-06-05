@@ -16,6 +16,9 @@ Interface graphique sombre (CustomTkinter), file d'attente multi-téléchargemen
 - **Transcodage H.265 intelligent** — ne ré-encode **que** les sources VP9/AV1 (4K). Le **H.264 (1080p et moins) est gardé tel quel** : import Premiere immédiat, sans attente d'encodage.
 - **Optimisation Premiere Pro** — encodage HEVC GPU (NVIDIA NVENC / Apple VideoToolbox) avec repli CPU (`libx265`).
 - **Cookies automatiques** — lit les cookies de **Chrome/Safari** si connecté à YouTube (4K sans manip), ou un `cookies.txt` posé à côté de l'app.
+- **Aide cookies intégrée** — si YouTube exige une connexion (vérification anti-robot, âge, vidéo réservée aux membres, 403), le message l'explique en clair et un bouton **« Réparer »** ouvre le mode d'emploi.
+- **Mise à jour automatique** — au lancement, l'app vérifie auprès de l'API GitHub Releases s'il existe une version plus récente et affiche un bandeau **« Mise à jour disponible »** ; le bouton **« Mettre à jour »** télécharge et lance l'installeur de la plateforme. Non bloquant, silencieux si hors ligne.
+- **Vrai dossier Téléchargements** — la destination par défaut est le **dossier Téléchargements réel du système** (même s'il a été déplacé sur un autre disque), pas un `~/Downloads` reconstruit à la main.
 - **File d'attente** — plusieurs téléchargements en parallèle, chacun annulable, + bouton **« Nettoyer la liste »**.
 - **Multi-plateforme** — Windows (NVENC) et **macOS** (VideoToolbox, `.app` + `.dmg`).
 
@@ -126,7 +129,7 @@ python Robloader.py
 
 1. Collez l'URL YouTube.
 2. (Optionnel) renseignez **Début** / **Fin** pour n'extraire qu'un segment.
-3. Choisissez la **Destination** (par défaut : `~/Downloads`).
+3. Choisissez la **Destination** (par défaut : votre **dossier Téléchargements système**, ou le dernier dossier utilisé).
 4. **Telecharger** → le fichier final `.mp4` (HEVC) est prêt pour Premiere Pro.
 
 ---
@@ -203,7 +206,7 @@ dédiée). À défaut, yt-dlp écarte le DRM, le 403 déclenche le repli, et on 
 | Bloqué / **lent** sur « Preparation » | `nsig` à résoudre + (avant) bug de threading UI | bug de threading corrigé ; mettre yt-dlp à jour ; Deno accélère |
 | Vidéo en **360p** | client mobile seul sans PO Token | déjà corrigé (stratégie multi-clients) ; garder yt-dlp à jour |
 | Erreur **DRM** | seul un format protégé était proposé | la liste multi-clients fournit une alternative non-DRM ; sinon la vidéo est réellement protégée |
-| `Sign in to confirm…` / vidéo restreinte | YouTube exige une session | fournir un `cookies.txt` |
+| `Sign in to confirm…` / vidéo restreinte | YouTube exige une session | cliquer sur **« Réparer »** (ouvre le mode d'emploi) puis fournir des cookies (navigateur connecté ou `cookies.txt`) |
 | Échec de l'encodage GPU | pas de GPU NVIDIA/VideoToolbox dispo | repli CPU (`libx265`) automatique |
 
 ---
@@ -218,3 +221,14 @@ dédiée). À défaut, yt-dlp écarte le DRM, le 403 déclenche le repli, et on 
 - Qualité adaptative : `has_js_runtime()` teste la présence de Deno au démarrage ; le format visé
   (`bv*+ba/b` ou repli `bv*[height<=1080]+ba/b`) et l'activation d'EJS en découlent. Pas de Deno =
   pas de 4K, mais pas de crash non plus.
+- **Mise à jour** : au lancement, `_check_update_async()` interroge `releases/latest` de l'API
+  GitHub (le dépôt est **public** → aucun token) et compare le dernier tag à `APP_VERSION`. Si plus
+  récent, le bandeau propose de télécharger l'asset (`Robloader-Setup.exe` / `Robloader.dmg`) et de
+  le lancer. ⚠️ **À chaque release, bumper `APP_VERSION` dans `Robloader.py` ET `AppVersion` dans
+  `installer/Robloader.iss`**, puis `git tag vX.Y.Z` — sinon la comparaison de version ne se
+  déclenche pas et la CI ne reflète pas la bonne version.
+- **Build CI** (`.github/workflows/build.yml`) : un `git push` de tag `vX.Y.Z` build Windows
+  (`.exe` + installeur Inno Setup) et macOS (`.dmg`) et les attache à la Release. Les binaires
+  embarqués (Deno, ffmpeg/ffprobe) sont téléchargés au build ; pour ffmpeg sous Windows on vise le
+  **tag littéral** `releases/download/latest` de BtbN (sa release `latest` est une *pre-release*,
+  donc le raccourci `releases/latest/download` renvoie 404).
