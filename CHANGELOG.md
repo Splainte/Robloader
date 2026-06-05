@@ -2,6 +2,26 @@
 
 Toutes les évolutions notables de Robloader.
 
+## [1.0.3] — 2026-06-05
+
+### Corrigé
+- **Dossier de téléchargement par défaut = le VRAI dossier Téléchargements de l'OS**, même s'il a
+  été déplacé sur un autre disque. Avant, le chemin était reconstruit à la main (`~/Downloads`),
+  ce qui recréait un dossier « Downloads » en doublon au lieu d'utiliser le dossier relocalisé
+  (remonté par Robin). Sous Windows le chemin réel est lu via l'API système (FOLDERID_Downloads),
+  sous Linux via `xdg-user-dirs`.
+
+### Ajouté
+- **Erreur cookies plus claire + bouton « Réparer »** : quand YouTube exige une connexion
+  (vérification anti-robot, restriction d'âge, vidéo réservée aux membres, 403), le message
+  l'explique et un bouton **« Réparer »** ouvre le mode d'emploi cookies.
+- **Mise à jour automatique** : au lancement, l'app interroge l'API GitHub Releases (dépôt public,
+  sans authentification). Si une version plus récente existe, une bannière **« Mise à jour
+  disponible »** s'affiche. Le bouton **« Mettre à jour »** télécharge l'installeur de la
+  plateforme (`Robloader-Setup.exe` / `Robloader.dmg`) puis le lance — sous Windows l'app se ferme
+  pour laisser l'installeur écraser les fichiers. Bouton **« Plus tard »** pour ignorer. Non
+  bloquant, échoue en silence si hors ligne.
+
 ## [1.0.2] — 2026-06-03
 
 ### Corrigé

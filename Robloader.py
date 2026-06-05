@@ -6,6 +6,22 @@ import tempfile
 import threading
 import subprocess
 import urllib.request
+import webbrowser
+
+# Marche a suivre cookies (affichee par le bouton "Reparer" quand YouTube exige une connexion).
+COOKIE_FIX_URL = "https://docs.google.com/document/d/1zCuLswlQeOCV-C7bQWlmi6Ix-OcmPy252RCZSjAeKF4/"
+
+# Version courante de l'app (a bumper a CHAQUE release, en phase avec le tag git vX.Y.Z).
+APP_VERSION = "1.0.3"
+
+# Verification de mise a jour : le repo est PUBLIC, donc l'API GitHub Releases est lisible sans
+# aucune authentification (ni token embarque). On compare le dernier tag a APP_VERSION et, si plus
+# recent, on propose le telechargement+lancement de l'installeur de la plateforme.
+GITHUB_REPO = "Splainte/Robloader"
+RELEASES_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+RELEASES_PAGE_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
+# Nom EXACT de l'asset installeur par plateforme (cf .github/workflows/build.yml).
+UPDATE_ASSET = {'win': 'Robloader-Setup.exe', 'darwin': 'Robloader.dmg'}
 
 
 def config_dir():
@@ -16,6 +32,70 @@ def config_dir():
     else:
         base = os.environ.get('XDG_CONFIG_HOME') or os.path.join(os.path.expanduser('~'), '.config')
     return os.path.join(base, 'Robloader')
+
+
+def default_downloads_dir():
+    """VRAI dossier 'Telechargements' de l'utilisateur — celui que l'OS connait, MEME s'il a ete
+    deplace sur un autre disque/partition. On NE reconstruit PAS '~/Downloads' a la main : ca rate
+    le dossier relocalise et fabrique un doublon (bug remonte par Robin)."""
+    if sys.platform.startswith('win'):
+        try:
+            return _windows_downloads_dir()
+        except Exception:
+            pass
+    elif sys.platform == 'darwin':
+        # macOS ne relocalise pas Downloads : ~/Downloads est toujours le bon chemin
+        # (le libelle "Telechargements" n'est qu'un affichage localise du Finder).
+        d = os.path.join(os.path.expanduser('~'), 'Downloads')
+        if os.path.isdir(d):
+            return d
+    else:
+        # Linux : respecter xdg-user-dirs (le dossier peut etre ailleurs / dans une autre langue).
+        try:
+            d = subprocess.check_output(['xdg-user-dir', 'DOWNLOAD'], text=True).strip()
+            if d and os.path.isdir(d):
+                return d
+        except Exception:
+            pass
+    # Repli universel.
+    return os.path.join(os.path.expanduser('~'), 'Downloads')
+
+
+def _windows_downloads_dir():
+    """Interroge l'API Windows (FOLDERID_Downloads via SHGetKnownFolderPath) -> chemin REEL du
+    dossier Telechargements, relocalisation sur un autre disque incluse. Repli sur le registre
+    (User Shell Folders) puis ~/Downloads."""
+    import ctypes
+    from ctypes import wintypes
+
+    class GUID(ctypes.Structure):
+        _fields_ = [("Data1", wintypes.DWORD), ("Data2", wintypes.WORD),
+                    ("Data3", wintypes.WORD), ("Data4", ctypes.c_ubyte * 8)]
+
+    # FOLDERID_Downloads = {374DE290-123F-4565-9164-39C4925E467B}
+    folderid = GUID(0x374DE290, 0x123F, 0x4565,
+                    (ctypes.c_ubyte * 8)(0x91, 0x64, 0x39, 0xC4, 0x92, 0x5E, 0x46, 0x7B))
+    ptr = ctypes.c_wchar_p()
+    if ctypes.windll.shell32.SHGetKnownFolderPath(
+            ctypes.byref(folderid), 0, None, ctypes.byref(ptr)) == 0 and ptr.value:
+        path = ptr.value
+        ctypes.windll.ole32.CoTaskMemFree(ptr)
+        if os.path.isdir(path):
+            return path
+
+    # Repli registre : valeur nommee = le GUID Downloads (souvent REG_EXPAND_SZ -> expandvars).
+    try:
+        import winreg
+        sub = r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, sub) as k:
+            val, _ = winreg.QueryValueEx(k, "{374DE290-123F-4565-9164-39C4925E467B}")
+            path = os.path.expandvars(val)
+            if os.path.isdir(path):
+                return path
+    except Exception:
+        pass
+
+    return os.path.join(os.path.expanduser('~'), 'Downloads')
 
 
 # --- Auto-update yt-dlp ---
@@ -279,10 +359,11 @@ class RobloaderApp(ctk.CTk):
                 self.cookie_path = c
                 break
 
-        # Dossier de destination : dernier utilise (memorise) sinon ~/Downloads.
+        # Dossier de destination : dernier utilise (memorise) sinon le VRAI dossier Telechargements
+        # de l'OS (relocalisation sur un autre disque incluse — cf default_downloads_dir).
         saved_dir = self.config_data.get("download_dir")
         self.download_dir = saved_dir if (saved_dir and os.path.isdir(saved_dir)) \
-            else os.path.join(os.path.expanduser("~"), "Downloads")
+            else default_downloads_dir()
 
         self.temp_dir = pick_writable_tempdir(self.download_dir)
         tempfile.tempdir = self.temp_dir
@@ -294,6 +375,8 @@ class RobloaderApp(ctk.CTk):
 
         # Met yt-dlp a jour en arriere-plan (effectif au prochain lancement).
         update_ytdlp_async()
+        # Verifie en arriere-plan si une nouvelle version de Robloader est disponible.
+        self._check_update_async()
 
     # ---------- Helpers ----------
     def _resolve_binary(self, name):
@@ -331,9 +414,25 @@ class RobloaderApp(ctk.CTk):
         # En-tete
         header = ctk.CTkFrame(self, fg_color="transparent")
         header.pack(fill="x", padx=24, pady=(18, 4))
+        self._header = header
         ctk.CTkLabel(header, text="Robloader", font=("Helvetica", 24, "bold")).pack(side="left")
         ctk.CTkLabel(header, text="  YouTube → fichier prêt pour Premiere Pro",
                      font=("Helvetica", 12), text_color=MUTED).pack(side="left", pady=(8, 0))
+        ctk.CTkLabel(header, text=f"v{APP_VERSION}", font=("Helvetica", 11),
+                     text_color=MUTED).pack(side="right", pady=(10, 0))
+
+        # Banniere de mise a jour : creee masquee, affichee (apres l'en-tete) si _check_update_async
+        # detecte une version plus recente. "Telecharger" ouvre la Release ; "Plus tard" la masque.
+        self.update_banner = ctk.CTkFrame(self, fg_color="#1f3a2e")
+        self.update_lbl = ctk.CTkLabel(self.update_banner, text="", text_color=OK_GREEN,
+                                       font=("Helvetica", 12, "bold"), anchor="w")
+        self.update_lbl.pack(side="left", padx=12, pady=6)
+        ctk.CTkButton(self.update_banner, text="Plus tard", width=80, height=28,
+                      fg_color="#3a3a3a", hover_color="#4a4a4a",
+                      command=self.update_banner.pack_forget).pack(side="right", padx=(6, 12), pady=6)
+        ctk.CTkButton(self.update_banner, text="Mettre à jour", width=120, height=28,
+                      fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                      command=self._start_update).pack(side="right", padx=6, pady=6)
 
         # Ligne 1 : URL + qualite + destination + telecharger
         row1 = ctk.CTkFrame(self, fg_color="transparent")
@@ -906,9 +1005,20 @@ class RobloaderApp(ctk.CTk):
                                                      fg_color="#3A3A3A", text_color=MUTED))
             else:
                 msg = str(e)
-                self.ui(lambda m=msg: status_lbl.configure(text=f"Échec : {m}", text_color=ERR_RED))
-                self.ui(lambda: action_btn.configure(text="Échec", state="disabled",
-                                                     fg_color="#3A3A3A", text_color=MUTED))
+                if self._is_cookie_error(msg):
+                    # Echec lie a la connexion/cookies : message clair + bouton "Reparer" -> doc.
+                    self.ui(lambda: status_lbl.configure(
+                        text="YouTube demande une connexion (vérification anti-robot). "
+                             "Tes cookies sont absents ou expirés — clique sur « Réparer ».",
+                        text_color=ERR_RED))
+                    self.ui(lambda: action_btn.configure(
+                        text="Réparer", state="normal",
+                        fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color="#FFFFFF",
+                        command=self.open_cookie_help))
+                else:
+                    self.ui(lambda m=msg: status_lbl.configure(text=f"Échec : {m}", text_color=ERR_RED))
+                    self.ui(lambda: action_btn.configure(text="Échec", state="disabled",
+                                                         fg_color="#3A3A3A", text_color=MUTED))
             self.ui(lambda: prog_bar.set(0))
             try:
                 for p in (temp_output, final_output, (temp_output + ".part") if temp_output else None):
@@ -918,6 +1028,106 @@ class RobloaderApp(ctk.CTk):
                 pass
         finally:
             self.active_tasks.pop(task_id, None)
+
+    # YouTube exige parfois une connexion (verification anti-robot, video reservee aux membres,
+    # restriction d'age) ou bloque l'IP residentielle en 403 : tout ca se debloque avec des cookies.
+    # On reconnait ces echecs pour afficher un message clair + le bouton "Reparer".
+    _COOKIE_ERR_MARKERS = (
+        "sign in to confirm", "not a bot", "confirm your age",
+        "age-restricted", "age restricted",
+        "only available to members", "members-only", "join this channel",
+        "cookies", "cookie", "use --cookies",
+        "http error 403", "403: forbidden",
+    )
+
+    def _is_cookie_error(self, msg):
+        m = (msg or "").lower()
+        return any(k in m for k in self._COOKIE_ERR_MARKERS)
+
+    def open_cookie_help(self):
+        webbrowser.open(COOKIE_FIX_URL)
+
+    # ---------- Verification de mise a jour ----------
+    def _check_update_async(self):
+        """En tache de fond au lancement : interroge l'API GitHub Releases (repo public, sans auth)
+        et, si le dernier tag est plus recent qu'APP_VERSION, affiche la banniere. Echoue en silence
+        (reseau coupe, quota API, pas de release...)."""
+        def work():
+            try:
+                req = urllib.request.Request(RELEASES_API_URL, headers={
+                    'User-Agent': 'Robloader', 'Accept': 'application/vnd.github+json'})
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    data = json.load(r)
+                latest = str(data.get('tag_name', '')).lstrip('vV').strip()
+                if not latest or _norm_version(latest) <= _norm_version(APP_VERSION):
+                    return
+                # URL de l'installeur de CETTE plateforme (sinon on retombera sur la page Releases).
+                want = UPDATE_ASSET.get('win' if sys.platform.startswith('win') else sys.platform)
+                asset_url = None
+                if want:
+                    for a in data.get('assets', []):
+                        if a.get('name') == want:
+                            asset_url = a.get('browser_download_url')
+                            break
+                self.ui(lambda: self._show_update_banner(latest, asset_url))
+            except Exception:
+                pass
+        threading.Thread(target=work, daemon=True).start()
+
+    def _show_update_banner(self, latest, asset_url):
+        self._update_asset_url = asset_url
+        self.update_lbl.configure(text=f"Mise à jour disponible : v{latest}  (tu as v{APP_VERSION})")
+        self.update_banner.pack(fill="x", padx=24, pady=(4, 0), after=self._header)
+
+    def _start_update(self):
+        """Telecharge l'installeur de la plateforme puis le lance. Si pas d'asset pour cette
+        plateforme, ouvre simplement la page Releases dans le navigateur."""
+        url = getattr(self, '_update_asset_url', None)
+        if not url:
+            webbrowser.open(RELEASES_PAGE_URL)
+            return
+        self.update_lbl.configure(text="Téléchargement de la mise à jour…")
+        threading.Thread(target=self._download_and_launch, args=(url,), daemon=True).start()
+
+    def _download_and_launch(self, url):
+        try:
+            name = os.path.basename(url.split('?')[0]) or "Robloader-update"
+            dest = os.path.join(self.temp_dir, name)
+            req = urllib.request.Request(url, headers={'User-Agent': 'Robloader'})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                total = int(r.headers.get('Content-Length') or 0)
+                got = 0
+                with open(dest, 'wb') as f:
+                    while True:
+                        chunk = r.read(262144)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        got += len(chunk)
+                        if total:
+                            pct = int(got * 100 / total)
+                            self.ui(lambda p=pct: self.update_lbl.configure(text=f"Téléchargement… {p}%"))
+            self.ui(lambda: self._launch_installer(dest))
+        except Exception:
+            self.ui(lambda: self.update_lbl.configure(
+                text="Échec du téléchargement — ouverture de la page Releases…", text_color=ERR_RED))
+            webbrowser.open(RELEASES_PAGE_URL)
+
+    def _launch_installer(self, path):
+        if sys.platform.startswith('win'):
+            # Lance l'installeur puis quitte l'app : les fichiers doivent etre liberes pour l'ecrasement.
+            try:
+                os.startfile(path)  # noqa: disponible uniquement sous Windows
+            except Exception:
+                subprocess.Popen([path])
+            self.update_lbl.configure(text="Installation lancée — Robloader va se fermer…")
+            self.after(900, self.destroy)
+        elif sys.platform == 'darwin':
+            subprocess.run(['open', path])  # monte le .dmg
+            self.update_lbl.configure(
+                text="DMG ouvert — glisse Robloader dans Applications pour terminer.", text_color=OK_GREEN)
+        else:
+            webbrowser.open(RELEASES_PAGE_URL)
 
     def open_file_folder(self, path):
         if sys.platform.startswith("win"):
