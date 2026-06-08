@@ -12,7 +12,7 @@ import webbrowser
 COOKIE_FIX_URL = "https://docs.google.com/document/d/1zCuLswlQeOCV-C7bQWlmi6Ix-OcmPy252RCZSjAeKF4/"
 
 # Version courante de l'app (a bumper a CHAQUE release, en phase avec le tag git vX.Y.Z).
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 
 # Verification de mise a jour : le repo est PUBLIC, donc l'API GitHub Releases est lisible sans
 # aucune authentification (ni token embarque). On compare le dernier tag a APP_VERSION et, si plus
@@ -149,11 +149,18 @@ def update_ytdlp_async():
 #                          YouTube qui colle du DRM a tout sur tv (issue yt-dlp #12563) -> 4K KO.
 #   - ios                : filet de secours (mobile, ni PoT ni DRM, mais pas de 4K).
 # Pour une 4K FIABLE sur une session filtree : des cookies (navigateur ou cookies.txt) -> le client
-# web_embedded delivre alors la 4K sans 403. 'missing_pot' = ne pas jeter les formats sans PoT.
+# web_embedded delivre alors la 4K sans 403.
+#
+# PIEGE 'missing_pot' (corrige le 2026-06-08, video 2s_WoPudEKY) : sur certaines videos YouTube
+# applique le PO Token a l'AUDIO de web_embedded/tv/ios. Avec 'missing_pot' on GARDAIT ces formats
+# audio morts -> bv*+ba telechargeait la video puis l'audio plantait en 403 -> repli 1080p -> rebelote.
+# Resultat visible : 2 fichiers temporaires video (4K webm + 1080p mp4) SANS son, et un faux message
+# "probleme de cookies". -> On RETIRE 'missing_pot' (les formats morts sont jetes) ET on ajoute le
+# client 'android_vr' (audio+video sans PoT ni DRM) + le set 'default' de yt-dlp (qui suit les
+# contournements a jour). web_embedded reste pour la 4K-avec-cookies. (cf yt-dlp #12563 / PoT)
 YOUTUBE_EXTRACTOR_ARGS = {
     'youtube': {
-        'player_client': ['web_embedded', 'tv', 'ios'],
-        'formats': ['missing_pot'],
+        'player_client': ['default', 'android_vr', 'web_embedded'],
     }
 }
 

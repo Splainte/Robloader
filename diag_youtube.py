@@ -84,8 +84,7 @@ opts = {
     "logger": log,
     "remote_components": ["ejs:github"],
     "extractor_args": {"youtube": {
-        "player_client": ["web_embedded", "tv", "ios"],
-        "formats": ["missing_pot"],
+        "player_client": ["default", "android_vr", "web_embedded"],
     }},
     "format": "bv*+ba/b",
     "format_sort": ["res", "fps", "br"],

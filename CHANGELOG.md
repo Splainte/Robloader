@@ -2,6 +2,24 @@
 
 Toutes les évolutions notables de Robloader.
 
+## [1.0.4] — 2026-06-08
+
+### Corrigé
+- **Téléchargement « à moitié » sur certaines vidéos** (faux message « problème de cookies »,
+  vidéo téléchargée mais **sans le son**, fichiers temporaires 4K webm + 1080p mp4 laissés
+  derrière — remonté par Robin/Vic sur `2s_WoPudEKY`). Cause réelle : YouTube applique sur
+  certaines vidéos un **PO Token sur les pistes audio** des clients utilisés (`web_embedded`,
+  `tv`, `ios`) → l'audio renvoyait un **HTTP 403** pendant que la vidéo passait, d'où le
+  `bv*+ba` qui échouait puis repliait en 1080p (re-403). Le réglage `formats=missing_pot`
+  aggravait le tout en **gardant** ces formats audio morts. Correctif : on retire `missing_pot`
+  (les formats morts sont jetés) et on bascule sur les clients `default` + **`android_vr`**
+  (audio+vidéo sans PoT ni DRM), `web_embedded` restant pour la 4K-avec-cookies. Vérifié :
+  la vidéo se télécharge désormais **avec le son**.
+
+### Ajouté
+- **Build macOS Intel (x86_64)** en plus d'Apple Silicon. Chaque release publie maintenant
+  `Robloader-macos-arm64.dmg` (M1/M2/M3…) **et** `Robloader-macos-intel.dmg` (Mac Intel).
+
 ## [1.0.3] — 2026-06-05
 
 ### Corrigé

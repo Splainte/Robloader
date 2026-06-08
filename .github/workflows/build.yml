@@ -43,7 +43,18 @@ jobs:
             installer/Output/Robloader-Setup.exe
 
   macos:
-    runs-on: macos-14   # Apple Silicon (arm64)
+    # macos-14 = Apple Silicon (arm64), macos-13 = Intel (x86_64).
+    # build_macos.sh detecte l'archi via `uname -m` -> build natif sur chaque runner
+    # (PyInstaller ne cross-compile pas). On produit donc DEUX DMG distincts.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64    # Apple Silicon (M1/M2/M3...)
+          - runner: macos-13
+            arch: intel    # Mac Intel (x86_64)
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -53,12 +64,14 @@ jobs:
         run: |
           chmod +x build_macos.sh
           ./build_macos.sh
+      - name: Renommer le DMG par architecture
+        run: mv dist/Robloader.dmg "dist/Robloader-macos-${{ matrix.arch }}.dmg"
       - uses: actions/upload-artifact@v4
         with:
-          name: Robloader-macos
-          path: dist/Robloader.dmg
+          name: Robloader-macos-${{ matrix.arch }}
+          path: dist/Robloader-macos-${{ matrix.arch }}.dmg
       - name: Joindre a la release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Robloader.dmg
+          files: dist/Robloader-macos-${{ matrix.arch }}.dmg
