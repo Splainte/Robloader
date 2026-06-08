@@ -12,7 +12,7 @@ import webbrowser
 COOKIE_FIX_URL = "https://docs.google.com/document/d/1zCuLswlQeOCV-C7bQWlmi6Ix-OcmPy252RCZSjAeKF4/"
 
 # Version courante de l'app (a bumper a CHAQUE release, en phase avec le tag git vX.Y.Z).
-APP_VERSION = "1.0.4"
+APP_VERSION = "1.0.5"
 
 # Verification de mise a jour : le repo est PUBLIC, donc l'API GitHub Releases est lisible sans
 # aucune authentification (ni token embarque). On compare le dernier tag a APP_VERSION et, si plus
@@ -21,7 +21,7 @@ GITHUB_REPO = "Splainte/Robloader"
 RELEASES_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 RELEASES_PAGE_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
 # Nom EXACT de l'asset installeur par plateforme (cf .github/workflows/build.yml).
-UPDATE_ASSET = {'win': 'Robloader-Setup.exe', 'darwin': 'Robloader.dmg'}
+UPDATE_ASSET = {'win': 'Robloader-Setup.exe', 'darwin': 'Robloader-macos.dmg'}
 
 
 def config_dir():

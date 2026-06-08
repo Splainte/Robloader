@@ -2,6 +2,21 @@
 
 Toutes les évolutions notables de Robloader.
 
+## [1.0.5] — 2026-06-08
+
+### Ajouté
+- **Vraie compatibilité Mac Intel, via un DMG Universal2 unique.** En 1.0.4, le build Intel
+  passait par un runner GitHub `macos-13` qui n'a jamais démarré (les runners macOS Intel sont en
+  cours de retrait chez GitHub → job bloqué en file d'attente). On produit désormais, depuis le
+  runner Apple Silicon, un seul **`Robloader-macos.dmg` universal2** qui tourne **nativement sur
+  Intel ET Apple Silicon** : Python universal2 (python.org), binaires embarqués (ffmpeg, ffprobe,
+  deno) fusionnés en universels (`lipo`), et empaquetage PyInstaller `target_arch=universal2`.
+  Plus de choix de version à faire côté utilisateur.
+
+### Modifié
+- La mise à jour auto sur Mac télécharge maintenant `Robloader-macos.dmg` (au lieu de l'ancien
+  nom `Robloader.dmg`).
+
 ## [1.0.4] — 2026-06-08
 
 ### Corrigé
@@ -17,8 +32,9 @@ Toutes les évolutions notables de Robloader.
   la vidéo se télécharge désormais **avec le son**.
 
 ### Ajouté
-- **Build macOS Intel (x86_64)** en plus d'Apple Silicon. Chaque release publie maintenant
-  `Robloader-macos-arm64.dmg` (M1/M2/M3…) **et** `Robloader-macos-intel.dmg` (Mac Intel).
+- Tentative de build macOS Intel (x86_64) via un runner `macos-13`. **N'a pas abouti** (runner
+  Intel jamais alloué côté GitHub) → seul `Robloader-macos-arm64.dmg` a été publié pour cette
+  version. Corrigé en 1.0.5 par un DMG universal2.
 
 ## [1.0.3] — 2026-06-05
 

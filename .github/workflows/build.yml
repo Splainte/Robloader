@@ -43,35 +43,40 @@ jobs:
             installer/Output/Robloader-Setup.exe
 
   macos:
-    # macos-14 = Apple Silicon (arm64), macos-13 = Intel (x86_64).
-    # build_macos.sh detecte l'archi via `uname -m` -> build natif sur chaque runner
-    # (PyInstaller ne cross-compile pas). On produit donc DEUX DMG distincts.
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-14
-            arch: arm64    # Apple Silicon (M1/M2/M3...)
-          - runner: macos-13
-            arch: intel    # Mac Intel (x86_64)
-    runs-on: ${{ matrix.runner }}
+    # Un SEUL job sur le runner Apple Silicon (macos-14). Les runners Intel (macos-13) sont en
+    # cours de retrait chez GitHub -> on ne build plus Intel nativement. A la place on produit un
+    # DMG UNIVERSAL2 (Intel + Apple Silicon) : Python universal2 de python.org + binaires embarques
+    # fusionnes par lipo (cf build_macos.sh) + PyInstaller target_arch=universal2 (cf Robloader.spec).
+    runs-on: macos-14
+    env:
+      ROBLOADER_TARGET_ARCH: universal2
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Build (.app + .dmg)
+      - name: Installer Python universal2 (python.org)
+        # setup-python ne fournit qu'un Python arm64 sur Apple Silicon ; l'installeur officiel
+        # python.org est universal2 (indispensable pour un .app universal2).
+        run: |
+          PY=3.12.8
+          curl -fsSL -o /tmp/python.pkg "https://www.python.org/ftp/python/${PY}/python-${PY}-macos11.pkg"
+          sudo installer -pkg /tmp/python.pkg -target /
+          echo "/Library/Frameworks/Python.framework/Versions/3.12/bin" >> "$GITHUB_PATH"
+      - name: Verifier que Python est bien universal2
+        run: |
+          which python3
+          python3 -c "import sys; print(sys.version)"
+          lipo -archs "$(python3 -c 'import sys; print(sys.executable)')"
+      - name: Build (.app + .dmg universal2)
         run: |
           chmod +x build_macos.sh
           ./build_macos.sh
-      - name: Renommer le DMG par architecture
-        run: mv dist/Robloader.dmg "dist/Robloader-macos-${{ matrix.arch }}.dmg"
+      - name: Renommer le DMG
+        run: mv dist/Robloader.dmg dist/Robloader-macos.dmg
       - uses: actions/upload-artifact@v4
         with:
-          name: Robloader-macos-${{ matrix.arch }}
-          path: dist/Robloader-macos-${{ matrix.arch }}.dmg
+          name: Robloader-macos
+          path: dist/Robloader-macos.dmg
       - name: Joindre a la release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Robloader-macos-${{ matrix.arch }}.dmg
+          files: dist/Robloader-macos.dmg

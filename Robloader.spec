@@ -48,7 +48,10 @@ exe = EXE(
     upx=False,
     console=False,            # app fenetree (pas de terminal)
     argv_emulation=False,     # desactive (source de soucis de demarrage, inutile ici)
-    target_arch=None,         # arch courante
+    # arch cible : None = arch courante (build local). En CI macOS on exporte
+    # ROBLOADER_TARGET_ARCH=universal2 -> un binaire universel Intel + Apple Silicon
+    # (requiert un Python universal2 ET des bin/ universels, cf build_macos.sh).
+    target_arch=(os.environ.get('ROBLOADER_TARGET_ARCH') or None),
     icon=_exe_icon,
 )
 
