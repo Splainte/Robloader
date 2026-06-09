@@ -13,7 +13,7 @@ Pas de configuration, pas de dépendances à installer. Télécharge la dernièr
 ### → [Télécharger la dernière version](https://github.com/Splainte/Robloader/releases/latest)
 
 - **Windows** : lance `Robloader-Setup.exe` et suis l'installeur.
-- **macOS** : ouvre `Robloader.dmg` et glisse l'app dans **Applications**.
+- **macOS** : ouvre `Robloader.dmg` et glisse l'app dans **Applications**. Compatible Apple Silicon et Intel !
   *(Au premier lancement : clic droit ▸ Ouvrir, car l'app n'est pas signée.)*
 
 Tout le nécessaire est déjà inclus dans l'app.
@@ -25,11 +25,11 @@ Tout le nécessaire est déjà inclus dans l'app.
 - **Téléchargement YouTube simple** — colle l'URL, clique, c'est parti.
 - **Extraction d'un segment** — récupère seulement un passage de la vidéo grâce à un timecode de début et de fin, ou la vidéo entière.
 - **Choix de la qualité** — Max (jusqu'à 4K), 1440p, 1080p, 720p, 480p. Ton choix est mémorisé.
-- **Prêt pour Premiere Pro** — sortie HEVC (H.265) optimisée pour un import fluide, ou conversion en ProRes pour le montage.
-- **Encodage accéléré par le GPU** — utilise la carte graphique (NVIDIA / Apple) quand c'est possible, avec repli automatique sur le processeur.
-- **File d'attente** — enchaîne plusieurs téléchargements, chacun annulable à tout moment.
+- **Prêt pour Premiere Pro** — sortie HEVC (H.265) optimisée pour le meilleur combo qualité/poids, ou conversion en ProRes pour un montage fluide.
+- **Encodage accéléré par le GPU** — utilise la carte graphique (NVIDIA / Apple Silicon) quand c'est possible, avec repli automatique sur le processeur.
+- **File d'attente** — Permet d'enchaîner plusieurs téléchargements, chacun annulable à tout moment.
 - **Cookies automatiques** — se connecte tout seul à ton compte YouTube via le navigateur pour débloquer la 4K et les vidéos restreintes ; un bouton **« Réparer »** t'explique quoi faire si besoin.
-- **Mises à jour automatiques** — t'avertit quand une nouvelle version est disponible et l'installe en un clic.
+- **Mises à jour automatiques** — t'avertit quand une nouvelle version est disponible et l'installe en quelques clics.
 - **Windows & macOS**.
 
 ---
