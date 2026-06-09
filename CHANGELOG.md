@@ -2,6 +2,19 @@
 
 Toutes les évolutions notables de Robloader.
 
+## [1.1.1] — 2026-06-10
+
+### Modifié
+- **Windows : un seul livrable.** Plus de zip portable à côté de l'installeur — uniquement
+  `Robloader-Setup-Windows.exe` (auto-suffisant, ffmpeg/deno inclus), comme le DMG sur macOS.
+- **Installeur Windows plus direct** : suppression des pages d'accueil / choix de dossier /
+  confirmation → double-clic, ça s'installe, ça se lance.
+- **Noms de fichiers cohérents** : `Robloader-Setup-Windows.exe` et `Robloader-Setup-macOS.dmg`.
+
+### Interne
+- **Mise à jour automatique robuste aux renommages** : l'app sélectionne l'asset de la release par
+  son **extension** (`.exe` / `.dmg`) au lieu d'un nom de fichier exact.
+
 ## [1.1.0] — 2026-06-10
 
 ### Ajouté
@@ -160,6 +173,7 @@ avec ffmpeg, ffprobe et Deno **embarqués** (rien à installer).
 - `ffprobe` désormais embarqué (fini `ffprobe not found`).
 - Résolu le conflit de merge qui empêchait le fichier de s'exécuter.
 
+[1.1.1]: https://github.com/Splainte/Robloader/releases/tag/v1.1.1
 [1.1.0]: https://github.com/Splainte/Robloader/releases/tag/v1.1.0
 [1.0.8]: https://github.com/Splainte/Robloader/releases/tag/v1.0.8
 [1.0.7]: https://github.com/Splainte/Robloader/releases/tag/v1.0.7
