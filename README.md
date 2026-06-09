@@ -1,6 +1,6 @@
 # ⚙️ Robloader
 
-**Télécharge des vidéos depuis YouTube, TikTok, Instagram, Twitter (X) et Weibo — prêtes pour ton montage, en un clic.**
+**Télécharge des vidéos depuis YouTube, TikTok, Instagram, Twitter (X) et Weibo — en un clic.**
 
 Colle une URL : Robloader détecte le site, télécharge la vidéo et te rend un fichier prêt à l'emploi.
 
