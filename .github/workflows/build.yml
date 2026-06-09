@@ -30,12 +30,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Robloader-windows
-          path: installer/Output/Robloader-Setup.exe
+          path: installer/Output/Robloader-Setup-Windows.exe
       - name: Joindre a la release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: installer/Output/Robloader-Setup.exe
+          files: installer/Output/Robloader-Setup-Windows.exe
 
   macos:
     # Un SEUL job sur le runner Apple Silicon (macos-14). Les runners Intel (macos-13) sont en
@@ -65,13 +65,13 @@ jobs:
           chmod +x build_macos.sh
           ./build_macos.sh
       - name: Renommer le DMG
-        run: mv dist/Robloader.dmg dist/Robloader-macos.dmg
+        run: mv dist/Robloader.dmg dist/Robloader-Setup-macOS.dmg
       - uses: actions/upload-artifact@v4
         with:
           name: Robloader-macos
-          path: dist/Robloader-macos.dmg
+          path: dist/Robloader-Setup-macOS.dmg
       - name: Joindre a la release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Robloader-macos.dmg
+          files: dist/Robloader-Setup-macOS.dmg
