@@ -22,8 +22,9 @@ APP_VERSION = "1.1.0"
 GITHUB_REPO = "Splainte/Robloader"
 RELEASES_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 RELEASES_PAGE_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
-# Nom EXACT de l'asset installeur par plateforme (cf .github/workflows/build.yml).
-UPDATE_ASSET = {'win': 'Robloader-Setup.exe', 'darwin': 'Robloader-macos.dmg'}
+# Extension de l'installeur par plateforme. On selectionne l'asset de la release par son EXTENSION
+# (et non un nom exact) -> robuste aux renommages des fichiers de release (cf .github/workflows/build.yml).
+UPDATE_ASSET_EXT = {'win': '.exe', 'darwin': '.dmg'}
 
 
 def config_dir():
@@ -1324,12 +1325,12 @@ class RobloaderApp(ctk.CTk):
                 latest = str(data.get('tag_name', '')).lstrip('vV').strip()
                 if not latest or _norm_version(latest) <= _norm_version(APP_VERSION):
                     return
-                # URL de l'installeur de CETTE plateforme (sinon on retombera sur la page Releases).
-                want = UPDATE_ASSET.get('win' if sys.platform.startswith('win') else sys.platform)
+                # URL de l'installeur de CETTE plateforme (par extension ; sinon page Releases).
+                want_ext = UPDATE_ASSET_EXT.get('win' if sys.platform.startswith('win') else sys.platform)
                 asset_url = None
-                if want:
+                if want_ext:
                     for a in data.get('assets', []):
-                        if a.get('name') == want:
+                        if str(a.get('name', '')).lower().endswith(want_ext):
                             asset_url = a.get('browser_download_url')
                             break
                 self.ui(lambda: self._show_update_banner(latest, asset_url))
