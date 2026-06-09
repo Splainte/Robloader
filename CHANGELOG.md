@@ -2,6 +2,26 @@
 
 Toutes les évolutions notables de Robloader.
 
+## [1.1.0] — 2026-06-10
+
+### Ajouté
+- **Multi-sources** : téléchargement depuis **TikTok, Instagram, X (Twitter) et Weibo** en plus de YouTube.
+- **Interface réactive à la source** : en collant un lien, l'app détecte le site et **fond enchaîné**
+  la couleur des boutons et des cases vers la charte du site (rouge YouTube, `#FE2C55` TikTok,
+  magenta Instagram, noir X, rouge Weibo).
+- **Options adaptées au site** : les cases sous-titres / miniature et le sélecteur de qualité se
+  masquent automatiquement quand le site ne les concerne pas.
+
+### Modifié
+- Pipeline yt-dlp aiguillé par site : nsig/Deno réservé à YouTube, meilleur flux disponible ailleurs.
+- En-tête épuré : suppression du sous-titre « YouTube → fichier prêt pour Premiere Pro » (hors sujet
+  en multi-sources).
+
+### Corrigé
+- Champ URL : le texte d'invite grisé pouvait rester collé au lien lors d'un remplacement
+  (Cmd+A puis Cmd+V) → « Colle u‹lien›n lien… ». Corrigé (plus de reconfiguration dynamique du
+  placeholder dans CTkEntry).
+
 ## [1.0.8] — 2026-06-09
 
 ### Corrigé
@@ -140,6 +160,7 @@ avec ffmpeg, ffprobe et Deno **embarqués** (rien à installer).
 - `ffprobe` désormais embarqué (fini `ffprobe not found`).
 - Résolu le conflit de merge qui empêchait le fichier de s'exécuter.
 
+[1.1.0]: https://github.com/Splainte/Robloader/releases/tag/v1.1.0
 [1.0.8]: https://github.com/Splainte/Robloader/releases/tag/v1.0.8
 [1.0.7]: https://github.com/Splainte/Robloader/releases/tag/v1.0.7
 [1.0.6]: https://github.com/Splainte/Robloader/releases/tag/v1.0.6
