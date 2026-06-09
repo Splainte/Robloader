@@ -2,6 +2,20 @@
 
 Toutes les évolutions notables de Robloader.
 
+## [1.0.6] — 2026-06-09
+
+### Ajouté
+- **Case « Transcodage »** sur la ligne Sortie (cochée par défaut). En la décochant, le transcodage
+  ffmpeg est désactivé : yt-dlp livre le fichier dans son format natif (`.webm`, `.mkv`, `.mp4`…)
+  sans aucune conversion — téléchargement plus rapide, fichier potentiellement illisible dans Premiere.
+  Si des timecodes sont fournis, la découpe est effectuée par copie de flux (`-c copy`) sans ré-encodage.
+- **Menu Sortie adaptatif** : quand le transcodage est désactivé, les options HEVC et ProRes disparaissent
+  (sans objet) et le menu se réduit à `Vidéo (natif)`, Audio MP3, Audio WAV, Sous-titres seuls.
+  Basculer la case remet automatiquement le menu à jour et corrige la sélection si besoin.
+
+### Modifié
+- Renommage des sorties : `HEVC (Premiere)` → **HEVC**, `ProRes (montage)` → **ProRes**.
+
 ## [1.0.5] — 2026-06-08
 
 ### Ajouté
@@ -99,6 +113,10 @@ avec ffmpeg, ffprobe et Deno **embarqués** (rien à installer).
 - `ffprobe` désormais embarqué (fini `ffprobe not found`).
 - Résolu le conflit de merge qui empêchait le fichier de s'exécuter.
 
+[1.0.6]: https://github.com/Splainte/Robloader/releases/tag/v1.0.6
+[1.0.5]: https://github.com/Splainte/Robloader/releases/tag/v1.0.5
+[1.0.4]: https://github.com/Splainte/Robloader/releases/tag/v1.0.4
+[1.0.3]: https://github.com/Splainte/Robloader/releases/tag/v1.0.3
 [1.0.2]: https://github.com/Splainte/Robloader/releases/tag/v1.0.2
 [1.0.1]: https://github.com/Splainte/Robloader/releases/tag/v1.0.1
 [1.0.0]: https://github.com/Splainte/Robloader/releases/tag/v1.0.0

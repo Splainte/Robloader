@@ -4,7 +4,7 @@
 
 [Setup]
 AppName=Robloader
-AppVersion=1.0.5
+AppVersion=1.0.6
 AppPublisher=Humanoid
 DefaultDirName={autopf}\Robloader
 DefaultGroupName=Robloader
