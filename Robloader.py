@@ -14,7 +14,7 @@ import webbrowser
 COOKIE_FIX_URL = "https://docs.google.com/document/d/1zCuLswlQeOCV-C7bQWlmi6Ix-OcmPy252RCZSjAeKF4/"
 
 # Version courante de l'app (a bumper a CHAQUE release, en phase avec le tag git vX.Y.Z).
-APP_VERSION = "1.0.8"
+APP_VERSION = "1.1.0"
 
 # Verification de mise a jour : le repo est PUBLIC, donc l'API GitHub Releases est lisible sans
 # aucune authentification (ni token embarque). On compare le dernier tag a APP_VERSION et, si plus
@@ -490,8 +490,6 @@ class RobloaderApp(ctk.CTk):
         header.pack(fill="x", padx=24, pady=(18, 4))
         self._header = header
         ctk.CTkLabel(header, text="Robloader", font=("Helvetica", 24, "bold")).pack(side="left")
-        ctk.CTkLabel(header, text="  YouTube → fichier prêt pour Premiere Pro",
-                     font=("Helvetica", 12), text_color=MUTED).pack(side="left", pady=(8, 0))
         ctk.CTkLabel(header, text=f"v{APP_VERSION}", font=("Helvetica", 11),
                      text_color=MUTED).pack(side="right", pady=(10, 0))
 
@@ -557,9 +555,9 @@ class RobloaderApp(ctk.CTk):
         row3 = ctk.CTkFrame(self, fg_color="transparent")
         row3.pack(fill="x", padx=24, pady=(4, 2))
         self.transcode_var = tk.BooleanVar(value=bool(self.config_data.get("transcode", True)))
-        ctk.CTkCheckBox(row3, text="Transcodage", variable=self.transcode_var,
-                        command=self._on_transcode_change,
-                        height=28).pack(side="left", padx=(0, 16))
+        self.transcode_chk = ctk.CTkCheckBox(row3, text="Transcodage", variable=self.transcode_var,
+                                             command=self._on_transcode_change, height=28)
+        self.transcode_chk.pack(side="left", padx=(0, 16))
         ctk.CTkLabel(row3, text="Sortie  ", font=("Helvetica", 12, "bold")).pack(side="left")
         transcode_on = self.transcode_var.get()
         valid_formats = OUTPUT_FORMATS_TRANSCODE if transcode_on else OUTPUT_FORMATS_NO_TRANSCODE
@@ -659,12 +657,13 @@ class RobloaderApp(ctk.CTk):
             self.apply_profile(profile)
 
     def apply_profile(self, profile):
-        """Applique la DA d'un site : fondu de couleur des boutons + placeholder + options dispo."""
+        """Applique la DA d'un site : fondu de couleur des boutons + options dispo.
+
+        NB : on ne touche PAS au placeholder dynamiquement. `CTkEntry.configure(placeholder_text=…)`
+        peut reinjecter le texte grise comme vrai texte dans le champ (bug visible au Cmd+A/Cmd+V :
+        « Colle u<lien>n lien… »). Le placeholder reste donc fixe et neutre (defini a la creation).
+        """
         self._cur_profile = profile
-        try:
-            self.url_entry.configure(placeholder_text=profile['placeholder'])
-        except Exception:
-            pass
         self._animate_accent(profile['accent'], profile['hover'])
         self.apply_caps(profile)
 
@@ -702,6 +701,9 @@ class RobloaderApp(ctk.CTk):
             self.download_btn.configure(fg_color=accent, hover_color=hover)
             self.quality_menu.configure(button_color=accent, button_hover_color=hover)
             self.output_menu.configure(button_color=accent, button_hover_color=hover)
+            # Les cases a cocher prennent aussi la couleur du site (remplissage + survol).
+            for chk in (self.transcode_chk, self.subs_chk, self.thumb_chk):
+                chk.configure(fg_color=accent, hover_color=hover)
         except Exception:
             pass
 
