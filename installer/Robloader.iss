@@ -9,6 +9,11 @@ AppPublisher=Humanoid
 DefaultDirName={autopf}\Robloader
 DefaultGroupName=Robloader
 DisableProgramGroupPage=yes
+; Assistant minimal pour les novices : pas de page d'accueil, ni choix de dossier, ni page de
+; confirmation -> double-clic, ca s'installe, ca se lance. (Le dossier reste {autopf}\Robloader.)
+DisableWelcomePage=yes
+DisableDirPage=yes
+DisableReadyPage=yes
 OutputDir=Output
 OutputBaseFilename=Robloader-Setup
 SetupIconFile=..\logo.ico

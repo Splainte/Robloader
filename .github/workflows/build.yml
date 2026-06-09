@@ -25,22 +25,17 @@ jobs:
       - name: Build (.exe + installeur)
         shell: pwsh
         run: ./build_windows.ps1
-      - name: Zip de l'app
-        shell: pwsh
-        run: Compress-Archive -Path dist/Robloader/* -DestinationPath Robloader-windows.zip
+      # Un SEUL livrable Windows : l'installeur auto-suffisant (ffmpeg/deno inclus). Plus de zip
+      # portable -> equivalent direct du DMG macOS, pas de confusion pour l'utilisateur.
       - uses: actions/upload-artifact@v4
         with:
           name: Robloader-windows
-          path: |
-            Robloader-windows.zip
-            installer/Output/Robloader-Setup.exe
+          path: installer/Output/Robloader-Setup.exe
       - name: Joindre a la release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            Robloader-windows.zip
-            installer/Output/Robloader-Setup.exe
+          files: installer/Output/Robloader-Setup.exe
 
   macos:
     # Un SEUL job sur le runner Apple Silicon (macos-14). Les runners Intel (macos-13) sont en
