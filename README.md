@@ -1,8 +1,8 @@
 # ⚙️ Robloader
 
-**Télécharge des vidéos depuis YouTube, TikTok, Instagram, X (Twitter) et Weibo — prêtes pour ton montage, en un clic.**
+**Télécharge des vidéos depuis YouTube, TikTok, Instagram, Twitter (X) et Weibo — prêtes pour ton montage, en un clic.**
 
-Colle une URL : Robloader détecte le site, télécharge la vidéo et te rend un fichier prêt à l'emploi (optimisé pour Adobe Premiere Pro) — sans réglages, sans ligne de commande.
+Colle une URL : Robloader détecte le site, télécharge la vidéo et te rend un fichier prêt à l'emploi.
 
 ---
 
@@ -40,7 +40,7 @@ Tout le nécessaire est déjà inclus dans l'app.
 1. Colle l'**URL** de la vidéo (YouTube, TikTok, Instagram, X, Weibo).
 2. *(Optionnel)* indique un **Début** et une **Fin** pour ne récupérer qu'un extrait.
 3. Choisis la **destination** (par défaut : ton dossier Téléchargements).
-4. Clique sur **Télécharger** — ton fichier est prêt pour ton montage. 🎬
+4. Clique sur **Télécharger** — ton fichier est prêt. 🎬
 
 ---
 
