@@ -7,6 +7,7 @@ import tempfile
 import threading
 import subprocess
 import urllib.request
+from urllib.parse import urlparse
 import webbrowser
 
 # Marche a suivre cookies (affichee par le bouton "Reparer" quand YouTube exige une connexion).
@@ -335,6 +336,49 @@ MUTED = "#9aa0a6"
 CARD = "#2b2b2b"
 
 
+# --- Profils de site : pilotent la couleur des boutons (DA du site) et les options pertinentes ---
+# 'caps' = capacites du site : sous-titres, miniature, et "echelle de qualite" (YouTube a un vrai
+# ladder 480p->4K ; les autres servent surtout un flux unique -> on prend "best" et on masque le menu).
+DEFAULT_PROFILE = {
+    'id': 'default', 'label': 'Vidéo', 'domains': (),
+    'accent': ACCENT, 'hover': ACCENT_HOVER,
+    'placeholder': "Colle un lien (YouTube, TikTok, Instagram, X, Weibo)…",
+    'caps': {'subtitles': True, 'thumbnail': True, 'quality_ladder': True},
+}
+SITE_PROFILES = [
+    {'id': 'youtube', 'label': 'YouTube', 'domains': ('youtube.com', 'youtu.be'),
+     'accent': '#FF0000', 'hover': '#CC0000', 'placeholder': "Colle un lien YouTube ici…",
+     'caps': {'subtitles': True, 'thumbnail': True, 'quality_ladder': True}},
+    {'id': 'tiktok', 'label': 'TikTok', 'domains': ('tiktok.com',),
+     'accent': '#FE2C55', 'hover': '#D81E43', 'placeholder': "Colle un lien TikTok ici…",
+     'caps': {'subtitles': False, 'thumbnail': True, 'quality_ladder': False}},
+    {'id': 'instagram', 'label': 'Instagram', 'domains': ('instagram.com', 'instagr.am'),
+     'accent': '#DD2A7B', 'hover': '#B82568', 'placeholder': "Colle un lien Instagram ici…",
+     'caps': {'subtitles': False, 'thumbnail': False, 'quality_ladder': False}},
+    {'id': 'x', 'label': 'X', 'domains': ('twitter.com', 'x.com'),
+     'accent': '#101114', 'hover': '#26282c', 'placeholder': "Colle un lien X (Twitter) ici…",
+     'caps': {'subtitles': False, 'thumbnail': False, 'quality_ladder': False}},
+    {'id': 'weibo', 'label': 'Weibo', 'domains': ('weibo.com', 'weibo.cn'),
+     'accent': '#E6162D', 'hover': '#C01020', 'placeholder': "Colle un lien Weibo ici…",
+     'caps': {'subtitles': False, 'thumbnail': False, 'quality_ladder': False}},
+]
+
+
+def detect_site(url):
+    """Profil du site a partir d'une URL (par le nom de domaine). DEFAULT_PROFILE si vide/inconnu."""
+    if not url or not url.strip():
+        return DEFAULT_PROFILE
+    host = (urlparse(url.strip()).hostname or '')
+    if not host:  # URL collee sans schema (ex: "youtu.be/...") -> on reessaie avec un http://
+        host = (urlparse('http://' + url.strip()).hostname or '')
+    host = host.lower()
+    for prof in SITE_PROFILES:
+        for d in prof['domains']:
+            if host == d or host.endswith('.' + d):
+                return prof
+    return DEFAULT_PROFILE
+
+
 class RobloaderApp(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -469,9 +513,12 @@ class RobloaderApp(ctk.CTk):
         row1.pack(fill="x", padx=24, pady=(8, 4))
         row1.grid_columnconfigure(0, weight=1)
 
-        self.url_entry = ctk.CTkEntry(row1, placeholder_text="Colle un lien YouTube ici…", height=38)
+        self.url_entry = ctk.CTkEntry(row1, placeholder_text=DEFAULT_PROFILE['placeholder'], height=38)
         self.url_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
         self.url_entry.bind("<Return>", lambda e: self.start_download_thread())
+        # Detection de la source au collage / a la frappe -> theming + options adaptes (debounce).
+        self.url_entry.bind("<KeyRelease>", lambda e: self._schedule_site_detect())
+        self.url_entry.bind("<<Paste>>", lambda e: self._schedule_site_detect())
 
         self.quality_var = ctk.StringVar(
             value=self.config_data.get("quality", DEFAULT_QUALITY) if
@@ -526,13 +573,22 @@ class RobloaderApp(ctk.CTk):
             fg_color=CARD, button_color="#3a3a3a", button_hover_color="#4a4a4a")
         self.output_menu.pack(side="left", padx=(0, 16))
         self.subs_var = tk.BooleanVar(value=bool(self.config_data.get("subs", False)))
-        ctk.CTkCheckBox(row3, text="Sous-titres (.srt)", variable=self.subs_var,
-                        command=lambda: self._save_pref("subs", self.subs_var.get()),
-                        height=28).pack(side="left", padx=(0, 14))
+        self.subs_chk = ctk.CTkCheckBox(row3, text="Sous-titres (.srt)", variable=self.subs_var,
+                                        command=lambda: self._save_pref("subs", self.subs_var.get()),
+                                        height=28)
+        self.subs_chk.pack(side="left", padx=(0, 14))
         self.thumb_var = tk.BooleanVar(value=bool(self.config_data.get("thumb", False)))
-        ctk.CTkCheckBox(row3, text="Miniature", variable=self.thumb_var,
-                        command=lambda: self._save_pref("thumb", self.thumb_var.get()),
-                        height=28).pack(side="left")
+        self.thumb_chk = ctk.CTkCheckBox(row3, text="Miniature", variable=self.thumb_var,
+                                         command=lambda: self._save_pref("thumb", self.thumb_var.get()),
+                                         height=28)
+        self.thumb_chk.pack(side="left")
+
+        # Etat du theming par site (couleur courante des boutons + handles d'animation/debounce).
+        self._cur_profile = DEFAULT_PROFILE
+        self._cur_accent = DEFAULT_PROFILE['accent']
+        self._cur_hover = DEFAULT_PROFILE['hover']
+        self._accent_after = None
+        self._site_detect_after = None
 
         # Ligne d'etat (destination + cookies/deno)
         self.path_label = ctk.CTkLabel(self, text="", font=("Helvetica", 11), text_color=MUTED, anchor="w")
@@ -585,6 +641,97 @@ class RobloaderApp(ctk.CTk):
             if current in (OUT_HEVC, OUT_PRORES):
                 self.output_var.set(OUT_VIDEO_NATIVE)
                 self._save_pref("output", OUT_VIDEO_NATIVE)
+
+    # ---------- Theming / detection de la source ----------
+    def _schedule_site_detect(self):
+        # Debounce : on attend ~150 ms apres la derniere frappe/collage avant de detecter.
+        if self._site_detect_after is not None:
+            try:
+                self.after_cancel(self._site_detect_after)
+            except Exception:
+                pass
+        self._site_detect_after = self.after(150, self._on_site_detect)
+
+    def _on_site_detect(self):
+        self._site_detect_after = None
+        profile = detect_site(self.url_entry.get())
+        if profile is not self._cur_profile:
+            self.apply_profile(profile)
+
+    def apply_profile(self, profile):
+        """Applique la DA d'un site : fondu de couleur des boutons + placeholder + options dispo."""
+        self._cur_profile = profile
+        try:
+            self.url_entry.configure(placeholder_text=profile['placeholder'])
+        except Exception:
+            pass
+        self._animate_accent(profile['accent'], profile['hover'])
+        self.apply_caps(profile)
+
+    def apply_caps(self, profile):
+        """Affiche/masque les options selon les capacites du site. Une option masquee = forcee False."""
+        caps = profile['caps']
+        # On retire les deux cases puis on re-pack dans l'ordre celles qui s'appliquent (ordre stable).
+        for chk in (self.subs_chk, self.thumb_chk):
+            chk.pack_forget()
+        if caps['subtitles']:
+            self.subs_chk.pack(side="left", padx=(0, 14))
+        else:
+            self.subs_var.set(False)
+        if caps['thumbnail']:
+            self.thumb_chk.pack(side="left")
+        else:
+            self.thumb_var.set(False)
+        # Selecteur de qualite : uniquement pour un vrai ladder (YouTube) ; sinon "best" implicite.
+        if caps['quality_ladder']:
+            self.quality_menu.grid()
+        else:
+            self.quality_menu.grid_remove()
+
+    @staticmethod
+    def _hex_to_rgb(h):
+        h = h.lstrip('#')
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+    @staticmethod
+    def _rgb_to_hex(rgb):
+        return '#%02x%02x%02x' % tuple(max(0, min(255, int(round(c)))) for c in rgb)
+
+    def _set_accent(self, accent, hover):
+        try:
+            self.download_btn.configure(fg_color=accent, hover_color=hover)
+            self.quality_menu.configure(button_color=accent, button_hover_color=hover)
+            self.output_menu.configure(button_color=accent, button_hover_color=hover)
+        except Exception:
+            pass
+
+    def _animate_accent(self, end_accent, end_hover, steps=15, interval=16):
+        """Fondu enchaine : interpole en RGB la couleur courante -> couleur du site (~240 ms)."""
+        if self._accent_after is not None:
+            try:
+                self.after_cancel(self._accent_after)
+            except Exception:
+                pass
+            self._accent_after = None
+        start_a = self._hex_to_rgb(self._cur_accent)
+        start_h = self._hex_to_rgb(self._cur_hover)
+        end_a = self._hex_to_rgb(end_accent)
+        end_h = self._hex_to_rgb(end_hover)
+
+        def lerp(a, b, t):
+            return [a[i] + (b[i] - a[i]) * t for i in range(3)]
+
+        def frame(i):
+            t = i / steps
+            self._set_accent(self._rgb_to_hex(lerp(start_a, end_a, t)),
+                             self._rgb_to_hex(lerp(start_h, end_h, t)))
+            if i < steps:
+                self._accent_after = self.after(interval, lambda: frame(i + 1))
+            else:
+                self._cur_accent, self._cur_hover = end_accent, end_hover
+                self._accent_after = None
+
+        frame(1)
 
     # ---------- Actions ----------
     def choose_folder(self):
@@ -753,14 +900,21 @@ class RobloaderApp(ctk.CTk):
             start_seconds = self.parse_timecode(start_str)
             end_seconds = self.parse_timecode(end_str)
 
+            # Profil du site (YouTube garde tout son traitement specifique ; les autres prennent best).
+            profile = detect_site(url)
+            is_youtube = profile['id'] == 'youtube'
+
             # Hauteur cible selon le choix utilisateur ; sans Deno on plafonne a 1080p (nsig requis au-dela).
             target_h = QUALITY_MAP.get(quality_label)
-            if not self.js_runtime:
+            if not profile['caps']['quality_ladder']:
+                target_h = None  # TikTok/Insta/X/Weibo : pas de ladder -> meilleur flux disponible
+            elif not self.js_runtime:
                 target_h = min(target_h or 1080, 1080)
             dl_format = format_for_height(target_h)
             fb_h = 1080 if not target_h else min(target_h, 1080)
             fallback_format = format_for_height(fb_h)
-            dl_remote = EJS_REMOTE_COMPONENTS if self.js_runtime else []
+            # nsig/EJS (Deno) ne concerne QUE YouTube -> inutile (et evite un fetch du solveur) ailleurs.
+            dl_remote = EJS_REMOTE_COMPONENTS if (self.js_runtime and is_youtube) else []
             audio_mode = output in (OUT_MP3, OUT_WAV)
             want_prores = (output == OUT_PRORES)
             subs_only = (output == OUT_SUBS)
