@@ -13,8 +13,10 @@ Pas de configuration, pas de dépendances à installer. Télécharge la dernièr
 ### → [Télécharger la dernière version](https://github.com/Splainte/Robloader/releases/latest)
 
 - **Windows** : lance `Robloader-Setup-Windows.exe` et suis l'installeur.
-- **macOS** : ouvre `Robloader-Setup-macOS.dmg` et glisse l'app dans **Applications**. Compatible Apple Silicon et Intel !
-  *(Au premier lancement : clic droit ▸ Ouvrir, car l'app n'est pas signée.)*
+  *(À l'installation il faudra forcer windows à ouvrir l'installeur en cliquand sur "en savoir plus" puis "éxecuter quand même", car l'app n'est pas signée.)*
+- **macOS** : ouvre `Robloader-Setup-macOS.dmg` et glisse l'app dans **Applications**.
+  Compatible Apple Silicon et Intel !
+  *(Au premier lancement il faudra forcer l'ouverture de l'app en passant par le menu sécurité des réglages système, car l'app n'est pas signée.)*
 
 Tout le nécessaire est déjà inclus dans l'app.
 
