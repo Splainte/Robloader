@@ -2,6 +2,16 @@
 
 Toutes les évolutions notables de Robloader.
 
+## [1.0.7] — 2026-06-09
+
+### Corrigé
+- **Vérification de mise à jour silencieuse sur macOS** : le Python bundlé par PyInstaller ne trouvait
+  pas les certificats SSL système → `urlopen` levait une `SSLCertVerificationError` avalée
+  silencieusement → la bannière de mise à jour n'apparaissait jamais sur Mac. Corrigé en utilisant
+  `certifi` (bundle de certificats CA autonome) pour créer le contexte SSL des appels réseau
+  (vérification de release GitHub + téléchargement de mise à jour yt-dlp). `certifi` est désormais
+  embarqué dans le bundle PyInstaller via `collect_data_files('certifi')`.
+
 ## [1.0.6] — 2026-06-09
 
 ### Ajouté
@@ -113,6 +123,7 @@ avec ffmpeg, ffprobe et Deno **embarqués** (rien à installer).
 - `ffprobe` désormais embarqué (fini `ffprobe not found`).
 - Résolu le conflit de merge qui empêchait le fichier de s'exécuter.
 
+[1.0.7]: https://github.com/Splainte/Robloader/releases/tag/v1.0.7
 [1.0.6]: https://github.com/Splainte/Robloader/releases/tag/v1.0.6
 [1.0.5]: https://github.com/Splainte/Robloader/releases/tag/v1.0.5
 [1.0.4]: https://github.com/Splainte/Robloader/releases/tag/v1.0.4

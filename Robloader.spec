@@ -17,7 +17,7 @@ if os.path.isdir('bin'):
 
 # customtkinter embarque des assets (themes, polices) + nos icones.
 _icons = [(f, '.') for f in ('logo.png', 'logo.icns', 'logo.ico') if os.path.exists(f)]
-datas = collect_data_files('customtkinter') + _icons
+datas = collect_data_files('customtkinter') + collect_data_files('certifi') + _icons
 
 _exe_icon = 'logo.icns' if (IS_MAC and os.path.exists('logo.icns')) else \
             ('logo.ico' if os.path.exists('logo.ico') else None)

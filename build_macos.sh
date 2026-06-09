@@ -29,7 +29,7 @@ esac
 
 echo "-> Dependances Python..."
 python3 -m pip install --upgrade pip >/dev/null
-python3 -m pip install --upgrade pyinstaller customtkinter "yt-dlp" >/dev/null
+python3 -m pip install --upgrade pyinstaller customtkinter "yt-dlp" certifi >/dev/null
 
 mkdir -p bin
 

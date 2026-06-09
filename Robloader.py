@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import shutil
+import ssl
 import tempfile
 import threading
 import subprocess
@@ -12,7 +13,7 @@ import webbrowser
 COOKIE_FIX_URL = "https://docs.google.com/document/d/1zCuLswlQeOCV-C7bQWlmi6Ix-OcmPy252RCZSjAeKF4/"
 
 # Version courante de l'app (a bumper a CHAQUE release, en phase avec le tag git vX.Y.Z).
-APP_VERSION = "1.0.6"
+APP_VERSION = "1.0.7"
 
 # Verification de mise a jour : le repo est PUBLIC, donc l'API GitHub Releases est lisible sans
 # aucune authentification (ni token embarque). On compare le dernier tag a APP_VERSION et, si plus
@@ -98,6 +99,17 @@ def _windows_downloads_dir():
     return os.path.join(os.path.expanduser('~'), 'Downloads')
 
 
+# --- SSL : certifi pour les apps PyInstaller macOS ---
+# Sur macOS, le Python bundlé par PyInstaller ne trouve pas les certificats système -> urlopen
+# lève SSLCertVerificationError (avalé silencieusement) -> update check / yt-dlp update silencieux.
+# certifi fournit un bundle de certs CA indépendant du système.
+def _ssl_context():
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return ssl.create_default_context()
+
 # --- Auto-update yt-dlp ---
 # YouTube casse l'extraction regulierement. On charge une version a jour de yt-dlp si elle a ete
 # telechargee au lancement PRECEDENT (le wheel PyPI est un zip importable via sys.path). Ainsi
@@ -124,7 +136,7 @@ def update_ytdlp_async():
     wheel dans le dossier de config -> pris en compte au PROCHAIN lancement (jamais de swap a chaud)."""
     def work():
         try:
-            with urllib.request.urlopen('https://pypi.org/pypi/yt-dlp/json', timeout=12) as r:
+            with urllib.request.urlopen('https://pypi.org/pypi/yt-dlp/json', timeout=12, context=_ssl_context()) as r:
                 data = json.load(r)
             latest = data['info']['version']
             current = getattr(yt_dlp.version, '__version__', '')
@@ -1143,7 +1155,7 @@ class RobloaderApp(ctk.CTk):
             try:
                 req = urllib.request.Request(RELEASES_API_URL, headers={
                     'User-Agent': 'Robloader', 'Accept': 'application/vnd.github+json'})
-                with urllib.request.urlopen(req, timeout=10) as r:
+                with urllib.request.urlopen(req, timeout=10, context=_ssl_context()) as r:
                     data = json.load(r)
                 latest = str(data.get('tag_name', '')).lstrip('vV').strip()
                 if not latest or _norm_version(latest) <= _norm_version(APP_VERSION):
@@ -1181,7 +1193,7 @@ class RobloaderApp(ctk.CTk):
             name = os.path.basename(url.split('?')[0]) or "Robloader-update"
             dest = os.path.join(self.temp_dir, name)
             req = urllib.request.Request(url, headers={'User-Agent': 'Robloader'})
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with urllib.request.urlopen(req, timeout=30, context=_ssl_context()) as r:
                 total = int(r.headers.get('Content-Length') or 0)
                 got = 0
                 with open(dest, 'wb') as f:
