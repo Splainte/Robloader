@@ -9,6 +9,16 @@ from PyInstaller.utils.hooks import collect_data_files
 IS_MAC = sys.platform == 'darwin'
 IS_WIN = sys.platform.startswith('win')
 
+# Version lue depuis Robloader.py (source unique de verite) pour rester aligne sur APP_VERSION
+# sans avoir a la dupliquer ici.
+import re as _re
+try:
+    _APP_VERSION = _re.search(
+        r'APP_VERSION\s*=\s*["\']([^"\']+)',
+        open('Robloader.py', encoding='utf-8').read()).group(1)
+except Exception:
+    _APP_VERSION = '0.0.0'
+
 # Binaires embarques : tout ce que le script de build a depose dans bin/ (ffmpeg, ffprobe, deno,
 # avec ou sans .exe). 'dst="."' -> racine ; le code les retrouve via resolution robuste + PATH.
 binaries = []
@@ -74,6 +84,7 @@ if IS_MAC:
         info_plist={
             'NSHighResolutionCapable': True,
             'LSMinimumSystemVersion': '11.0',
-            'CFBundleShortVersionString': '1.0.0',
+            'CFBundleShortVersionString': _APP_VERSION,
+            'CFBundleVersion': _APP_VERSION,
         },
     )

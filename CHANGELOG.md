@@ -2,6 +2,23 @@
 
 Toutes les évolutions notables de Robloader.
 
+## [1.0.8] — 2026-06-09
+
+### Corrigé
+- **Label cookies affichant un navigateur non installé (macOS)** : la détection considérait un
+  navigateur Chromium présent dès que son dossier de base existait, ce qui pouvait afficher
+  « cookies chrome/edge ✓ » alors qu'Edge n'était pas installé (dossier `Microsoft Edge` résiduel).
+  La détection teste désormais le fichier `Local State`, créé uniquement après un vrai premier
+  lancement. Le bandeau d'état liste aussi tous les navigateurs détectés (avant : les 2 premiers).
+- **Icône qui grossissait dans le dock à l'ouverture (macOS, Intel + Apple Silicon)** : `iconphoto()`
+  remplaçait l'icône `.icns` du bundle (dessinée sur la grille Apple) par un PNG plein cadre, plus
+  gros. On n'appelle plus `iconphoto()` sur macOS : l'icône du `.app` reste cohérente, ouverte
+  comme fermée.
+
+### Interne
+- `CFBundleShortVersionString` / `CFBundleVersion` du `.app` sont désormais lus depuis `APP_VERSION`
+  (`Robloader.py`) au lieu d'être codés en dur (ils restaient bloqués à `1.0.0`).
+
 ## [1.0.7] — 2026-06-09
 
 ### Corrigé
@@ -123,6 +140,7 @@ avec ffmpeg, ffprobe et Deno **embarqués** (rien à installer).
 - `ffprobe` désormais embarqué (fini `ffprobe not found`).
 - Résolu le conflit de merge qui empêchait le fichier de s'exécuter.
 
+[1.0.8]: https://github.com/Splainte/Robloader/releases/tag/v1.0.8
 [1.0.7]: https://github.com/Splainte/Robloader/releases/tag/v1.0.7
 [1.0.6]: https://github.com/Splainte/Robloader/releases/tag/v1.0.6
 [1.0.5]: https://github.com/Splainte/Robloader/releases/tag/v1.0.5
