@@ -1,8 +1,8 @@
 # ⚙️ Robloader
 
-**Télécharge des vidéos YouTube et les prépare pour Adobe Premiere Pro, en un clic.**
+**Télécharge des vidéos depuis YouTube, TikTok, Instagram, X (Twitter) et Weibo — prêtes pour ton montage, en un clic.**
 
-Colle une URL, choisis ta qualité, et récupère un fichier `.mp4` prêt à importer dans Premiere — sans réglages, sans ligne de commande.
+Colle une URL : Robloader détecte le site, télécharge la vidéo et te rend un fichier prêt à l'emploi (optimisé pour Adobe Premiere Pro) — sans réglages, sans ligne de commande.
 
 ---
 
@@ -22,13 +22,14 @@ Tout le nécessaire est déjà inclus dans l'app.
 
 ## ✨ Fonctionnalités
 
-- **Téléchargement YouTube simple** — colle l'URL, clique, c'est parti.
+- **Multi-plateformes** — YouTube, TikTok, Instagram, X (Twitter) et Weibo. Colle l'URL, clique, c'est parti.
+- **Interface qui s'adapte à la source** — l'app détecte le site collé et ajuste **en fondu** les couleurs des boutons et les options disponibles à sa charte (rouge YouTube, magenta Instagram…).
 - **Extraction d'un segment** — récupère seulement un passage de la vidéo grâce à un timecode de début et de fin, ou la vidéo entière.
-- **Choix de la qualité** — Max (jusqu'à 4K), 1440p, 1080p, 720p, 480p. Ton choix est mémorisé.
+- **Choix de la qualité** (YouTube) — Max (jusqu'à 4K), 1440p, 1080p, 720p, 480p. Ton choix est mémorisé.
 - **Prêt pour Premiere Pro** — sortie HEVC (H.265) optimisée pour le meilleur combo qualité/poids, ou conversion en ProRes pour un montage fluide.
 - **Encodage accéléré par le GPU** — utilise la carte graphique (NVIDIA / Apple Silicon) quand c'est possible, avec repli automatique sur le processeur.
 - **File d'attente** — Permet d'enchaîner plusieurs téléchargements, chacun annulable à tout moment.
-- **Cookies automatiques** — se connecte tout seul à ton compte YouTube via le navigateur pour débloquer la 4K et les vidéos restreintes ; un bouton **« Réparer »** t'explique quoi faire si besoin.
+- **Cookies automatiques** — se connecte tout seul à ton compte via le navigateur pour débloquer la 4K, les vidéos restreintes ou les contenus privés (Instagram, X) ; un bouton **« Réparer »** t'explique quoi faire si besoin.
 - **Mises à jour automatiques** — t'avertit quand une nouvelle version est disponible et l'installe en quelques clics.
 - **Windows & macOS**.
 
@@ -36,15 +37,15 @@ Tout le nécessaire est déjà inclus dans l'app.
 
 ## ▶️ Utilisation
 
-1. Colle l'**URL** de la vidéo YouTube.
+1. Colle l'**URL** de la vidéo (YouTube, TikTok, Instagram, X, Weibo).
 2. *(Optionnel)* indique un **Début** et une **Fin** pour ne récupérer qu'un extrait.
 3. Choisis la **destination** (par défaut : ton dossier Téléchargements).
-4. Clique sur **Télécharger** — ton fichier `.mp4` est prêt pour Premiere Pro. 🎬
+4. Clique sur **Télécharger** — ton fichier est prêt pour ton montage. 🎬
 
 ---
 
 ## ❓ Un souci ?
 
-La plupart des problèmes (vidéo qui demande une connexion, 4K qui ne passe pas) se règlent en étant **connecté à YouTube dans ton navigateur** : Robloader utilise alors automatiquement ta session. Le bouton **« Réparer »** dans l'app explique la marche à suivre.
+La plupart des problèmes (vidéo qui demande une connexion, contenu privé, 4K qui ne passe pas) se règlent en étant **connecté au site dans ton navigateur** : Robloader utilise alors automatiquement ta session. Le bouton **« Réparer »** dans l'app explique la marche à suivre.
 
 > 🧑‍💻 Tu veux construire l'app depuis les sources ou contribuer ? Vois la documentation technique dans le code (`Robloader.py`) et les scripts de build (`build_windows.ps1`, `build_macos.sh`).
