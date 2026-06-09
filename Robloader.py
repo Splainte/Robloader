@@ -267,12 +267,15 @@ def detect_browsers():
     Firefox est mis avant Chrome car Chrome VERROUILLE sa base de cookies quand il est ouvert
     (yt-dlp #7271 / #7271 'Could not copy Chrome cookie database') -> Firefox passe meme ouvert."""
     home = os.path.expanduser("~")
+    # Pour les navigateurs Chromium (chrome/brave/edge) on teste le fichier "Local State", cree
+    # seulement APRES un vrai premier lancement -> evite les faux positifs (ex: un dossier
+    # "Microsoft Edge" vide qui traine sans qu'Edge soit reellement installe/utilise).
     if sys.platform == 'darwin':
         cand = [
             ('firefox', "Library/Application Support/Firefox/Profiles"),
-            ('chrome', "Library/Application Support/Google/Chrome"),
-            ('brave',  "Library/Application Support/BraveSoftware/Brave-Browser"),
-            ('edge',   "Library/Application Support/Microsoft Edge"),
+            ('chrome', "Library/Application Support/Google/Chrome/Local State"),
+            ('brave',  "Library/Application Support/BraveSoftware/Brave-Browser/Local State"),
+            ('edge',   "Library/Application Support/Microsoft Edge/Local State"),
             ('safari', "Library/Containers/com.apple.Safari/Data/Library/Cookies/Cookies.binarycookies"),
         ]
     elif sys.platform.startswith('win'):
@@ -280,14 +283,14 @@ def detect_browsers():
         ap = os.environ.get('APPDATA', '')
         cand = [
             ('firefox', os.path.join(ap, "Mozilla", "Firefox", "Profiles")),
-            ('chrome', os.path.join(la, "Google", "Chrome", "User Data")),
-            ('edge',   os.path.join(la, "Microsoft", "Edge", "User Data")),
-            ('brave',  os.path.join(la, "BraveSoftware", "Brave-Browser", "User Data")),
+            ('chrome', os.path.join(la, "Google", "Chrome", "User Data", "Local State")),
+            ('edge',   os.path.join(la, "Microsoft", "Edge", "User Data", "Local State")),
+            ('brave',  os.path.join(la, "BraveSoftware", "Brave-Browser", "User Data", "Local State")),
         ]
     else:
         cand = [
             ('firefox', os.path.join(home, ".mozilla", "firefox")),
-            ('chrome', os.path.join(home, ".config", "google-chrome")),
+            ('chrome', os.path.join(home, ".config", "google-chrome", "Local State")),
         ]
     found = []
     for name, rel in cand:
@@ -416,6 +419,11 @@ class RobloaderApp(ctk.CTk):
         return None
 
     def _set_window_icon(self):
+        # Sur macOS, l'icone du dock vient du .app (logo.icns, dessine sur la grille Apple avec
+        # ses marges transparentes). iconphoto() la remplacerait par logo.png plein cadre -> icone
+        # visiblement plus grosse a l'ouverture qu'a l'etat ferme. On laisse donc le .icns du bundle.
+        if sys.platform == 'darwin':
+            return
         png = self._find_asset("logo.png")
         if png:
             try:
@@ -548,7 +556,7 @@ class RobloaderApp(ctk.CTk):
         if os.path.exists(self.cookie_path):
             bits.append("cookies.txt ✓")
         elif self.browsers:
-            bits.append(f"cookies {'/'.join(self.browsers[:2])} ✓")
+            bits.append(f"cookies {'/'.join(self.browsers)} ✓")
         else:
             bits.append("sans cookies (4K limitée)")
         if not self.js_runtime:
