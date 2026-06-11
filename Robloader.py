@@ -14,7 +14,7 @@ import webbrowser
 COOKIE_FIX_URL = "https://docs.google.com/document/d/1zCuLswlQeOCV-C7bQWlmi6Ix-OcmPy252RCZSjAeKF4/"
 
 # Version courante de l'app (a bumper a CHAQUE release, en phase avec le tag git vX.Y.Z).
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 
 # Verification de mise a jour : le repo est PUBLIC, donc l'API GitHub Releases est lisible sans
 # aucune authentification (ni token embarque). On compare le dernier tag a APP_VERSION et, si plus
@@ -182,10 +182,13 @@ YOUTUBE_EXTRACTOR_ARGS = {
 # + un script solveur "EJS" telecharge une fois. Sans Deno -> on plafonne a 1080p.
 EJS_REMOTE_COMPONENTS = ['ejs:github']
 
-# Tri des formats : meilleure resolution, puis on PREFERE le H.264 (avc) et l'audio AAC. Resultat :
-# en 1080p et moins on obtient du MP4/H.264 deja pret pour Premiere (-> pas de transcodage), et la
-# 4K/1440p (seulement en VP9/AV1) sera transcodee en H.265.
-FORMAT_SORT = ['res', 'fps', 'vcodec:h264', 'acodec:aac', 'br']
+# Tri des formats : on PREFERE d'abord la piste audio ORIGINALE (lang), sinon yt-dlp peut choisir un
+# doublage auto YouTube (ex. Jensen Huang en russe). 'lang' n'a aucun effet sur les pistes video (pas
+# de langue) -> la selection de qualite/codec reste identique. Sans ce critere en tete, le 'br' (debit)
+# departage les pistes audio AVANT la langue et un dub a plus haut bitrate gagne. Puis : meilleure
+# resolution, puis on PREFERE le H.264 (avc) et l'audio AAC. Resultat : en 1080p et moins on obtient du
+# MP4/H.264 deja pret pour Premiere (-> pas de transcodage), et la 4K/1440p (VP9/AV1) sera transcodee en H.265.
+FORMAT_SORT = ['lang', 'res', 'fps', 'vcodec:h264', 'acodec:aac', 'br']
 
 # Codecs deja confortables pour Premiere Pro (pas besoin de transcoder en H.265).
 PREMIERE_READY_CODECS = ('h264', 'avc1', 'avc', 'hevc', 'h265', 'hev1', 'hvc1')
