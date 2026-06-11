@@ -341,8 +341,8 @@ ERR_RED = ("#c0392b", "#e74c3c")
 MUTED = ("#5f6368", "#9aa0a6")
 CARD = ("#dbdbdb", "#2b2b2b")            # fond des menus deroulants / cartes de tache
 SURFACE = ("#ebebeb", "#212121")         # fond de la liste de telechargements
-BTN_SECONDARY = ("#dbdbdb", BTN_SECONDARY)   # boutons secondaires (gris)
-BTN_SECONDARY_HOVER = ("#c8c8c8", BTN_SECONDARY_HOVER)
+BTN_SECONDARY = ("#dbdbdb", "#3a3a3a")   # boutons secondaires (gris)
+BTN_SECONDARY_HOVER = ("#c8c8c8", "#4a4a4a")
 BANNER_BG = ("#d4f3e3", "#1f3a2e")       # banniere "mise a jour disponible"
 
 
