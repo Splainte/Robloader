@@ -2,6 +2,19 @@
 
 Toutes les évolutions notables de Robloader.
 
+## [1.1.3] — 2026-06-11
+
+### Corrigé
+- **Mise à jour in-app à nouveau fiable.** Le bouton « Mettre à jour » pouvait rediriger vers la page
+  GitHub Releases au lieu de télécharger directement dans l'app. Cause : la release était publiée par
+  le premier des deux builds (Windows / macOS), donc pendant quelques minutes elle ne contenait qu'un
+  seul installeur ; l'app sur la plateforme manquante ne trouvait pas son asset et basculait sur le
+  navigateur.
+  - **CI** : la release n'est désormais publiée qu'**une seule fois**, après les deux builds, avec les
+    **deux** installeurs — plus aucune fenêtre où un asset manque.
+  - **App** : si l'asset manque au moment du clic, l'app **re-interroge l'API** avant de tomber sur le
+    navigateur (résilient aux timings et aux renommages d'assets).
+
 ## [1.1.2] — 2026-06-11
 
 ### Corrigé
