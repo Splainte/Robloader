@@ -14,7 +14,7 @@ import webbrowser
 COOKIE_FIX_URL = "https://docs.google.com/document/d/1zCuLswlQeOCV-C7bQWlmi6Ix-OcmPy252RCZSjAeKF4/"
 
 # Version courante de l'app (a bumper a CHAQUE release, en phase avec le tag git vX.Y.Z).
-APP_VERSION = "1.1.3"
+APP_VERSION = "1.1.4"
 
 # Verification de mise a jour : le repo est PUBLIC, donc l'API GitHub Releases est lisible sans
 # aucune authentification (ni token embarque). On compare le dernier tag a APP_VERSION et, si plus
@@ -330,14 +330,20 @@ def pick_writable_tempdir(preferred):
     return home
 
 
-# Couleurs
+# Couleurs — tuples (clair, sombre) pour suivre le theme systeme (set_appearance_mode("System")).
+# CustomTkinter choisit automatiquement l'element du tuple selon le mode courant. Les couleurs de
+# marque (accent bleu, accents par site) restent uniques car lisibles sur les deux fonds.
 ACCENT = "#1f6aa5"
 ACCENT_HOVER = "#175384"
-OK_GREEN = "#2ecc71"
-WARN_ORANGE = "#e67e22"
-ERR_RED = "#e74c3c"
-MUTED = "#9aa0a6"
-CARD = "#2b2b2b"
+OK_GREEN = ("#1a8a4a", "#2ecc71")
+WARN_ORANGE = ("#b35e00", "#e67e22")
+ERR_RED = ("#c0392b", "#e74c3c")
+MUTED = ("#5f6368", "#9aa0a6")
+CARD = ("#dbdbdb", "#2b2b2b")            # fond des menus deroulants / cartes de tache
+SURFACE = ("#ebebeb", "#212121")         # fond de la liste de telechargements
+BTN_SECONDARY = ("#dbdbdb", BTN_SECONDARY)   # boutons secondaires (gris)
+BTN_SECONDARY_HOVER = ("#c8c8c8", BTN_SECONDARY_HOVER)
+BANNER_BG = ("#d4f3e3", "#1f3a2e")       # banniere "mise a jour disponible"
 
 
 # --- Profils de site : pilotent la couleur des boutons (DA du site) et les options pertinentes ---
@@ -387,12 +393,14 @@ class RobloaderApp(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        ctk.set_appearance_mode("dark")
+        # Suit le theme clair/sombre du systeme et reagit en live a son changement.
+        ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
 
         self.title("Robloader")
         self.geometry("840x640")
         self.minsize(760, 560)
+        self._last_appearance = None  # pour re-appliquer le chrome Windows au changement de theme
 
         self.task_counter = 0
         self.active_tasks = {}
@@ -446,10 +454,45 @@ class RobloaderApp(ctk.CTk):
         self._set_window_icon()
         self._build_ui()
 
+        # Esthetique fenetre : barre de titre clair/sombre + backdrop Mica (Windows 11). Le watcher
+        # applique le chrome une 1re fois puis le re-applique si le theme systeme change en cours de route.
+        self._watch_system_theme()
+
         # Met yt-dlp a jour en arriere-plan (effectif au prochain lancement).
         update_ytdlp_async()
         # Verifie en arriere-plan si une nouvelle version de Robloader est disponible.
         self._check_update_async()
+
+    def _watch_system_theme(self):
+        """Detecte le mode courant (clair/sombre, resolu meme en mode "System") et, a chaque
+        changement, re-applique le chrome natif de la fenetre. Se reprogramme toutes les 3 s."""
+        mode = ctk.get_appearance_mode()
+        if mode != self._last_appearance:
+            self._last_appearance = mode
+            self._apply_window_chrome()
+        self.after(3000, self._watch_system_theme)
+
+    def _apply_window_chrome(self):
+        """Windows 11 : barre de titre immersive clair/sombre + backdrop Mica (fond translucide
+        teinte du bureau). Appels DWM en ctypes -> no-op silencieux sur Windows 10 / macOS / Linux."""
+        if not sys.platform.startswith('win'):
+            return
+        try:
+            import ctypes
+            hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+            dwm = ctypes.windll.dwmapi
+            dark = ctypes.c_int(1 if ctk.get_appearance_mode() == "Dark" else 0)
+            # Barre de titre sombre/claire. 20 = DWMWA_USE_IMMERSIVE_DARK_MODE (Win10 20H1+/Win11),
+            # 19 = ancien attribut equivalent sur les builds anterieurs -> on tente les deux.
+            for attr in (20, 19):
+                dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(dark), ctypes.sizeof(dark))
+            # Backdrop Mica. 38 = DWMWA_SYSTEMBACKDROP_TYPE, valeur 2 = Mica (Win11 22H2+) ;
+            # 1029 = ancien DWMWA_MICA_EFFECT (Win11 21H2) -> repli.
+            for attr, val in ((38, 2), (1029, 1)):
+                v = ctypes.c_int(val)
+                dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v), ctypes.sizeof(v))
+        except Exception:
+            pass
 
     # ---------- Helpers ----------
     def _resolve_binary(self, name):
@@ -499,12 +542,12 @@ class RobloaderApp(ctk.CTk):
 
         # Banniere de mise a jour : creee masquee, affichee (apres l'en-tete) si _check_update_async
         # detecte une version plus recente. "Telecharger" ouvre la Release ; "Plus tard" la masque.
-        self.update_banner = ctk.CTkFrame(self, fg_color="#1f3a2e")
+        self.update_banner = ctk.CTkFrame(self, fg_color=BANNER_BG)
         self.update_lbl = ctk.CTkLabel(self.update_banner, text="", text_color=OK_GREEN,
                                        font=("Helvetica", 12, "bold"), anchor="w")
         self.update_lbl.pack(side="left", padx=12, pady=6)
         ctk.CTkButton(self.update_banner, text="Plus tard", width=80, height=28,
-                      fg_color="#3a3a3a", hover_color="#4a4a4a",
+                      fg_color=BTN_SECONDARY, hover_color=BTN_SECONDARY_HOVER,
                       command=self.update_banner.pack_forget).pack(side="right", padx=(6, 12), pady=6)
         ctk.CTkButton(self.update_banner, text="Mettre à jour", width=120, height=28,
                       fg_color=ACCENT, hover_color=ACCENT_HOVER,
@@ -527,12 +570,12 @@ class RobloaderApp(ctk.CTk):
             self.config_data.get("quality", DEFAULT_QUALITY) in QUALITY_LABELS else DEFAULT_QUALITY)
         self.quality_menu = ctk.CTkOptionMenu(
             row1, values=QUALITY_LABELS, variable=self.quality_var, width=170, height=38,
-            command=self._on_quality_change, fg_color=CARD, button_color="#3a3a3a",
-            button_hover_color="#4a4a4a")
+            command=self._on_quality_change, fg_color=CARD, button_color=BTN_SECONDARY,
+            button_hover_color=BTN_SECONDARY_HOVER)
         self.quality_menu.grid(row=0, column=1, padx=4)
 
         self.folder_btn = ctk.CTkButton(row1, text="Destination", width=110, height=38,
-                                        fg_color="#3a3a3a", hover_color="#4a4a4a",
+                                        fg_color=BTN_SECONDARY, hover_color=BTN_SECONDARY_HOVER,
                                         command=self.choose_folder)
         self.folder_btn.grid(row=0, column=2, padx=4)
 
@@ -572,7 +615,7 @@ class RobloaderApp(ctk.CTk):
         self.output_menu = ctk.CTkOptionMenu(
             row3, values=valid_formats, variable=self.output_var, width=170, height=32,
             command=lambda v: self._save_pref("output", v),
-            fg_color=CARD, button_color="#3a3a3a", button_hover_color="#4a4a4a")
+            fg_color=CARD, button_color=BTN_SECONDARY, button_hover_color=BTN_SECONDARY_HOVER)
         self.output_menu.pack(side="left", padx=(0, 16))
         self.subs_var = tk.BooleanVar(value=bool(self.config_data.get("subs", False)))
         self.subs_chk = ctk.CTkCheckBox(row3, text="Sous-titres (.srt)", variable=self.subs_var,
@@ -602,11 +645,11 @@ class RobloaderApp(ctk.CTk):
         qhead.pack(fill="x", padx=24, pady=(10, 0))
         ctk.CTkLabel(qhead, text="File de téléchargements", font=("Helvetica", 13, "bold")).pack(side="left")
         self.clean_btn = ctk.CTkButton(qhead, text="Nettoyer la liste", width=130, height=30,
-                                       fg_color="#3a3a3a", hover_color="#4a4a4a",
+                                       fg_color=BTN_SECONDARY, hover_color=BTN_SECONDARY_HOVER,
                                        command=self.clear_queue)
         self.clean_btn.pack(side="right")
 
-        self.scroll_frame = ctk.CTkScrollableFrame(self, fg_color="#212121", label_text="")
+        self.scroll_frame = ctk.CTkScrollableFrame(self, fg_color=SURFACE, label_text="")
         self.scroll_frame.pack(padx=24, pady=(6, 18), fill="both", expand=True)
 
     def _refresh_status_line(self):
@@ -813,7 +856,7 @@ class RobloaderApp(ctk.CTk):
         progress_bar.set(0)
 
         action_btn = ctk.CTkButton(task_frame, text="Annuler", width=120, height=30,
-                                   fg_color="#3a3a3a", hover_color="#4a4a4a",
+                                   fg_color=BTN_SECONDARY, hover_color=BTN_SECONDARY_HOVER,
                                    command=lambda: self.cancel_task(task_id))
         action_btn.pack(side="right", padx=12, pady=8)
 
@@ -1269,7 +1312,7 @@ class RobloaderApp(ctk.CTk):
             if self.active_tasks.get(task_id, {}).get('cancel_requested'):
                 self.ui(lambda: status_lbl.configure(text="Annulé.", text_color=WARN_ORANGE))
                 self.ui(lambda: action_btn.configure(text="Annulé", state="disabled",
-                                                     fg_color="#3A3A3A", text_color=MUTED))
+                                                     fg_color=BTN_SECONDARY, text_color=MUTED))
             else:
                 msg = str(e)
                 if self._is_cookie_error(msg):
@@ -1285,7 +1328,7 @@ class RobloaderApp(ctk.CTk):
                 else:
                     self.ui(lambda m=msg: status_lbl.configure(text=f"Échec : {m}", text_color=ERR_RED))
                     self.ui(lambda: action_btn.configure(text="Échec", state="disabled",
-                                                         fg_color="#3A3A3A", text_color=MUTED))
+                                                         fg_color=BTN_SECONDARY, text_color=MUTED))
             self.ui(lambda: prog_bar.set(0))
             try:
                 for p in (temp_output, final_output, (temp_output + ".part") if temp_output else None):
