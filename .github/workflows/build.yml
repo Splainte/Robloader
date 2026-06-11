@@ -31,11 +31,6 @@ jobs:
         with:
           name: Robloader-windows
           path: installer/Output/Robloader-Setup-Windows.exe
-      - name: Joindre a la release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: installer/Output/Robloader-Setup-Windows.exe
 
   macos:
     # Un SEUL job sur le runner Apple Silicon (macos-14). Les runners Intel (macos-13) sont en
@@ -70,8 +65,22 @@ jobs:
         with:
           name: Robloader-macos
           path: dist/Robloader-Setup-macOS.dmg
-      - name: Joindre a la release
-        if: startsWith(github.ref, 'refs/tags/')
+
+  # Publie la Release UNE SEULE FOIS, avec les DEUX installeurs, apres la reussite des deux builds.
+  # Evite la fenetre de course ou la release etait publiee avec un seul asset (l'autre build encore
+  # en cours) -> l'app d'un utilisateur sur la plateforme manquante basculait sur le navigateur.
+  release:
+    needs: [windows, macos]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Recuperer les installeurs des deux builds
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publier la release (Windows + macOS)
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Robloader-Setup-macOS.dmg
+          files: |
+            artifacts/Robloader-windows/Robloader-Setup-Windows.exe
+            artifacts/Robloader-macos/Robloader-Setup-macOS.dmg

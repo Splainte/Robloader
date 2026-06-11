@@ -14,7 +14,7 @@ import webbrowser
 COOKIE_FIX_URL = "https://docs.google.com/document/d/1zCuLswlQeOCV-C7bQWlmi6Ix-OcmPy252RCZSjAeKF4/"
 
 # Version courante de l'app (a bumper a CHAQUE release, en phase avec le tag git vX.Y.Z).
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.1.3"
 
 # Verification de mise a jour : le repo est PUBLIC, donc l'API GitHub Releases est lisible sans
 # aucune authentification (ni token embarque). On compare le dernier tag a APP_VERSION et, si plus
@@ -1315,27 +1315,33 @@ class RobloaderApp(ctk.CTk):
         webbrowser.open(COOKIE_FIX_URL)
 
     # ---------- Verification de mise a jour ----------
+    def _fetch_latest_release(self):
+        """Interroge l'API GitHub Releases (repo public, sans auth) et renvoie le JSON, ou None."""
+        req = urllib.request.Request(RELEASES_API_URL, headers={
+            'User-Agent': 'Robloader', 'Accept': 'application/vnd.github+json'})
+        with urllib.request.urlopen(req, timeout=10, context=_ssl_context()) as r:
+            return json.load(r)
+
+    def _asset_url_for_platform(self, data):
+        """URL de l'installeur de CETTE plateforme dans la release `data` (par extension), ou None."""
+        want_ext = UPDATE_ASSET_EXT.get('win' if sys.platform.startswith('win') else sys.platform)
+        if want_ext:
+            for a in (data or {}).get('assets', []):
+                if str(a.get('name', '')).lower().endswith(want_ext):
+                    return a.get('browser_download_url')
+        return None
+
     def _check_update_async(self):
-        """En tache de fond au lancement : interroge l'API GitHub Releases (repo public, sans auth)
-        et, si le dernier tag est plus recent qu'APP_VERSION, affiche la banniere. Echoue en silence
-        (reseau coupe, quota API, pas de release...)."""
+        """En tache de fond au lancement : interroge l'API GitHub Releases et, si le dernier tag est
+        plus recent qu'APP_VERSION, affiche la banniere. Echoue en silence (reseau coupe, quota API,
+        pas de release...)."""
         def work():
             try:
-                req = urllib.request.Request(RELEASES_API_URL, headers={
-                    'User-Agent': 'Robloader', 'Accept': 'application/vnd.github+json'})
-                with urllib.request.urlopen(req, timeout=10, context=_ssl_context()) as r:
-                    data = json.load(r)
+                data = self._fetch_latest_release()
                 latest = str(data.get('tag_name', '')).lstrip('vV').strip()
                 if not latest or _norm_version(latest) <= _norm_version(APP_VERSION):
                     return
-                # URL de l'installeur de CETTE plateforme (par extension ; sinon page Releases).
-                want_ext = UPDATE_ASSET_EXT.get('win' if sys.platform.startswith('win') else sys.platform)
-                asset_url = None
-                if want_ext:
-                    for a in data.get('assets', []):
-                        if str(a.get('name', '')).lower().endswith(want_ext):
-                            asset_url = a.get('browser_download_url')
-                            break
+                asset_url = self._asset_url_for_platform(data)
                 self.ui(lambda: self._show_update_banner(latest, asset_url))
             except Exception:
                 pass
@@ -1347,17 +1353,26 @@ class RobloaderApp(ctk.CTk):
         self.update_banner.pack(fill="x", padx=24, pady=(4, 0), after=self._header)
 
     def _start_update(self):
-        """Telecharge l'installeur de la plateforme puis le lance. Si pas d'asset pour cette
-        plateforme, ouvre simplement la page Releases dans le navigateur."""
+        """Telecharge l'installeur de la plateforme puis le lance, directement dans l'app."""
         url = getattr(self, '_update_asset_url', None)
-        if not url:
-            webbrowser.open(RELEASES_PAGE_URL)
-            return
         self.update_lbl.configure(text="Téléchargement de la mise à jour…")
         threading.Thread(target=self._download_and_launch, args=(url,), daemon=True).start()
 
     def _download_and_launch(self, url):
         try:
+            # L'asset peut manquer au moment du check (release publiee avant l'upload des installeurs,
+            # ou renommage) -> on re-interroge l'API au clic. On ne bascule sur le navigateur QUE si
+            # l'installeur est vraiment introuvable, pour garder un telechargement in-app transparent.
+            if not url:
+                try:
+                    url = self._asset_url_for_platform(self._fetch_latest_release())
+                except Exception:
+                    url = None
+            if not url:
+                self.ui(lambda: self.update_lbl.configure(
+                    text="Installeur indisponible — ouverture de la page Releases…", text_color=MUTED))
+                webbrowser.open(RELEASES_PAGE_URL)
+                return
             name = os.path.basename(url.split('?')[0]) or "Robloader-update"
             dest = os.path.join(self.temp_dir, name)
             req = urllib.request.Request(url, headers={'User-Agent': 'Robloader'})
