@@ -2,6 +2,15 @@
 
 Toutes les évolutions notables de Robloader.
 
+## [1.1.2] — 2026-06-11
+
+### Corrigé
+- **Piste audio doublée au lieu de l'originale.** Sur les vidéos YouTube proposant des doublages
+  automatiques, le téléchargement (vidéo complète ou extrait) pouvait récupérer une piste dub —
+  typiquement la langue listée juste après l'originale (ex. une keynote anglaise restituée en russe).
+  Le tri des formats privilégie désormais explicitement la piste **originale** (`lang` en tête de
+  `FORMAT_SORT`) ; sans impact sur le choix de qualité/codec vidéo.
+
 ## [1.1.1] — 2026-06-10
 
 ### Modifié
