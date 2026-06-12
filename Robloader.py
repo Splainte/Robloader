@@ -343,6 +343,10 @@ CARD = ("#dbdbdb", "#2b2b2b")            # fond des menus deroulants / cartes de
 SURFACE = ("#ebebeb", "#212121")         # fond de la liste de telechargements
 BTN_SECONDARY = ("#dbdbdb", "#3a3a3a")   # boutons secondaires (gris)
 BTN_SECONDARY_HOVER = ("#c8c8c8", "#4a4a4a")
+# Texte sur les controles gris (boutons secondaires, menus deroulants) : fonce en mode clair,
+# clair en mode sombre. Indispensable car le defaut CTkButton/CTkOptionMenu est blanc (prevu pour
+# un fond colore) -> illisible sur le gris clair en mode clair.
+TEXT_SECONDARY = ("gray14", "#DCE4EE")
 BANNER_BG = ("#d4f3e3", "#1f3a2e")       # banniere "mise a jour disponible"
 
 
@@ -547,7 +551,7 @@ class RobloaderApp(ctk.CTk):
                                        font=("Helvetica", 12, "bold"), anchor="w")
         self.update_lbl.pack(side="left", padx=12, pady=6)
         ctk.CTkButton(self.update_banner, text="Plus tard", width=80, height=28,
-                      fg_color=BTN_SECONDARY, hover_color=BTN_SECONDARY_HOVER,
+                      fg_color=BTN_SECONDARY, hover_color=BTN_SECONDARY_HOVER, text_color=TEXT_SECONDARY,
                       command=self.update_banner.pack_forget).pack(side="right", padx=(6, 12), pady=6)
         ctk.CTkButton(self.update_banner, text="Mettre à jour", width=120, height=28,
                       fg_color=ACCENT, hover_color=ACCENT_HOVER,
@@ -571,12 +575,12 @@ class RobloaderApp(ctk.CTk):
         self.quality_menu = ctk.CTkOptionMenu(
             row1, values=QUALITY_LABELS, variable=self.quality_var, width=170, height=38,
             command=self._on_quality_change, fg_color=CARD, button_color=BTN_SECONDARY,
-            button_hover_color=BTN_SECONDARY_HOVER)
+            button_hover_color=BTN_SECONDARY_HOVER, text_color=TEXT_SECONDARY)
         self.quality_menu.grid(row=0, column=1, padx=4)
 
         self.folder_btn = ctk.CTkButton(row1, text="Destination", width=110, height=38,
                                         fg_color=BTN_SECONDARY, hover_color=BTN_SECONDARY_HOVER,
-                                        command=self.choose_folder)
+                                        text_color=TEXT_SECONDARY, command=self.choose_folder)
         self.folder_btn.grid(row=0, column=2, padx=4)
 
         self.download_btn = ctk.CTkButton(row1, text="Télécharger", width=130, height=38,
@@ -615,7 +619,8 @@ class RobloaderApp(ctk.CTk):
         self.output_menu = ctk.CTkOptionMenu(
             row3, values=valid_formats, variable=self.output_var, width=170, height=32,
             command=lambda v: self._save_pref("output", v),
-            fg_color=CARD, button_color=BTN_SECONDARY, button_hover_color=BTN_SECONDARY_HOVER)
+            fg_color=CARD, button_color=BTN_SECONDARY, button_hover_color=BTN_SECONDARY_HOVER,
+            text_color=TEXT_SECONDARY)
         self.output_menu.pack(side="left", padx=(0, 16))
         self.subs_var = tk.BooleanVar(value=bool(self.config_data.get("subs", False)))
         self.subs_chk = ctk.CTkCheckBox(row3, text="Sous-titres (.srt)", variable=self.subs_var,
@@ -646,7 +651,7 @@ class RobloaderApp(ctk.CTk):
         ctk.CTkLabel(qhead, text="File de téléchargements", font=("Helvetica", 13, "bold")).pack(side="left")
         self.clean_btn = ctk.CTkButton(qhead, text="Nettoyer la liste", width=130, height=30,
                                        fg_color=BTN_SECONDARY, hover_color=BTN_SECONDARY_HOVER,
-                                       command=self.clear_queue)
+                                       text_color=TEXT_SECONDARY, command=self.clear_queue)
         self.clean_btn.pack(side="right")
 
         self.scroll_frame = ctk.CTkScrollableFrame(self, fg_color=SURFACE, label_text="")
@@ -857,7 +862,7 @@ class RobloaderApp(ctk.CTk):
 
         action_btn = ctk.CTkButton(task_frame, text="Annuler", width=120, height=30,
                                    fg_color=BTN_SECONDARY, hover_color=BTN_SECONDARY_HOVER,
-                                   command=lambda: self.cancel_task(task_id))
+                                   text_color=TEXT_SECONDARY, command=lambda: self.cancel_task(task_id))
         action_btn.pack(side="right", padx=12, pady=8)
 
         self.active_tasks[task_id] = {
