@@ -340,7 +340,7 @@ WARN_ORANGE = ("#b35e00", "#e67e22")
 ERR_RED = ("#c0392b", "#e74c3c")
 MUTED = ("#5f6368", "#9aa0a6")
 CARD = ("#dbdbdb", "#2b2b2b")            # fond des menus deroulants / cartes de tache
-SURFACE = ("#ebebeb", "#212121")         # fond de la liste de telechargements
+SURFACE = ("#ffffff", "#212121")         # fond de la liste de telechargements (blanc pur en clair pour se demarquer du fond)
 BTN_SECONDARY = ("#dbdbdb", "#3a3a3a")   # boutons secondaires (gris)
 BTN_SECONDARY_HOVER = ("#c8c8c8", "#4a4a4a")
 # Texte sur les controles gris (boutons secondaires, menus deroulants) : fonce en mode clair,
