@@ -477,26 +477,34 @@ class RobloaderApp(ctk.CTk):
         self.after(3000, self._watch_system_theme)
 
     def _apply_window_chrome(self):
-        """Windows 11 : barre de titre immersive clair/sombre + backdrop Mica (fond translucide
-        teinte du bureau). Appels DWM en ctypes -> no-op silencieux sur Windows 10 / macOS / Linux."""
+        """Windows 11 : barre de titre immersive clair/sombre + effet de VERRE translucide (acrylic
+        blur-behind) sur toute la fenetre. Pour que le verre transparaisse, les grands conteneurs
+        sont rendus transparents (cf _build_ui). No-op silencieux sur Windows 10 / macOS / Linux."""
         if not sys.platform.startswith('win'):
             return
+        dark = ctk.get_appearance_mode() == "Dark"
+        # 1) Barre de titre claire/sombre — en ctypes direct (robuste, sans dependance).
         try:
             import ctypes
             hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
-            dwm = ctypes.windll.dwmapi
-            dark = ctypes.c_int(1 if ctk.get_appearance_mode() == "Dark" else 0)
-            # Barre de titre sombre/claire. 20 = DWMWA_USE_IMMERSIVE_DARK_MODE (Win10 20H1+/Win11),
-            # 19 = ancien attribut equivalent sur les builds anterieurs -> on tente les deux.
-            for attr in (20, 19):
-                dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(dark), ctypes.sizeof(dark))
-            # Backdrop Mica. 38 = DWMWA_SYSTEMBACKDROP_TYPE, valeur 2 = Mica (Win11 22H2+) ;
-            # 1029 = ancien DWMWA_MICA_EFFECT (Win11 21H2) -> repli.
-            for attr, val in ((38, 2), (1029, 1)):
-                v = ctypes.c_int(val)
-                dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v), ctypes.sizeof(v))
+            flag = ctypes.c_int(1 if dark else 0)
+            for attr in (20, 19):  # 20 = DWMWA_USE_IMMERSIVE_DARK_MODE ; 19 = ancien equivalent
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                    hwnd, attr, ctypes.byref(flag), ctypes.sizeof(flag))
         except Exception:
             pass
+        # 2) Verre translucide. pywinstyles gere proprement l'acrylic blur-behind (frost facon
+        #    Fluent). On re-affirme la barre de titre selon le theme (acrylic force le sombre).
+        try:
+            import pywinstyles
+            pywinstyles.apply_style(self, "acrylic")
+            pywinstyles.apply_style(self, "dark" if dark else "light")
+        except Exception:
+            # Repli sans dependance : translucence uniforme (le bureau transparait, sans le flou).
+            try:
+                self.attributes("-alpha", 0.92)
+            except Exception:
+                pass
 
     # ---------- Helpers ----------
     def _resolve_binary(self, name):
@@ -654,7 +662,10 @@ class RobloaderApp(ctk.CTk):
                                        text_color=TEXT_SECONDARY, command=self.clear_queue)
         self.clean_btn.pack(side="right")
 
-        self.scroll_frame = ctk.CTkScrollableFrame(self, fg_color=SURFACE, label_text="")
+        # Sur Windows, on laisse transparaitre le verre (acrylic) derriere la liste ; ailleurs, pas
+        # d'acrylic -> on garde une surface opaque distincte.
+        _list_bg = "transparent" if sys.platform.startswith("win") else SURFACE
+        self.scroll_frame = ctk.CTkScrollableFrame(self, fg_color=_list_bg, label_text="")
         self.scroll_frame.pack(padx=24, pady=(6, 18), fill="both", expand=True)
 
     def _refresh_status_line(self):
