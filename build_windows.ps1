@@ -7,7 +7,7 @@ Write-Host "================ Robloader - build Windows ================"
 
 # 1) Dependances Python
 python -m pip install --upgrade pip | Out-Null
-python -m pip install --upgrade pyinstaller customtkinter yt-dlp certifi pywinstyles | Out-Null
+python -m pip install --upgrade pyinstaller customtkinter yt-dlp certifi | Out-Null
 
 New-Item -ItemType Directory -Force -Path bin | Out-Null
 
