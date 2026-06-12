@@ -2,6 +2,15 @@
 
 Toutes les évolutions notables de Robloader.
 
+## [1.1.4] — 2026-06-12
+
+### Ajouté
+- **Thème clair/sombre automatique.** L'app suit désormais le thème du système et bascule en direct
+  quand on change le mode clair/sombre de Windows/macOS (`set_appearance_mode("System")`). Toutes les
+  couleurs de l'interface ont été déclinées en variantes claire et sombre.
+- **Barre de titre Windows assortie au thème.** Sur Windows, la barre de titre suit le mode
+  clair/sombre (couleur uniquement, aucune translucidité). Sans dépendance ; sans effet ailleurs.
+
 ## [1.1.3] — 2026-06-11
 
 ### Corrigé
