@@ -331,10 +331,11 @@ def pick_writable_tempdir(preferred):
 
 
 # Couleurs — tuples (clair, sombre) pour suivre le theme systeme (set_appearance_mode("System")).
-# CustomTkinter choisit automatiquement l'element du tuple selon le mode courant. Les couleurs de
-# marque (accent bleu, accents par site) restent uniques car lisibles sur les deux fonds.
-ACCENT = "#1f6aa5"
-ACCENT_HOVER = "#175384"
+# CustomTkinter choisit automatiquement l'element du tuple selon le mode courant.
+# L'accent (boutons d'action, cases a cocher) suit la couleur d'accentuation du systeme
+# (Windows / macOS) ; bleu Robloader par defaut si indisponible. Voir get_system_accent().
+ACCENT_DEFAULT = "#1f6aa5"
+ACCENT_HOVER_DEFAULT = "#175384"
 OK_GREEN = ("#1a8a4a", "#2ecc71")
 WARN_ORANGE = ("#b35e00", "#e67e22")
 ERR_RED = ("#c0392b", "#e74c3c")
@@ -350,30 +351,81 @@ TEXT_SECONDARY = ("gray14", "#DCE4EE")
 BANNER_BG = ("#d4f3e3", "#1f3a2e")       # banniere "mise a jour disponible"
 
 
-# --- Profils de site : pilotent la couleur des boutons (DA du site) et les options pertinentes ---
+# --- Couleur d'accentuation du systeme ---
+def _hex_to_rgb(h):
+    h = h.lstrip('#')
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _darken_hex(h, factor=0.82):
+    """Variante survol : assombrit la couleur de ~18 %."""
+    return '#%02x%02x%02x' % tuple(int(c * factor) for c in _hex_to_rgb(h))
+
+
+def accent_text_color(accent):
+    """Noir ou blanc sur l'accent selon sa luminance (lisible meme sur un accent clair, ex. jaune)."""
+    r, g, b = _hex_to_rgb(accent)
+    return "#000000" if (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 else "#FFFFFF"
+
+
+# macOS : AppleAccentColor est un index ; le swatch « Multicolore » (defaut) n'ecrit aucune cle -> bleu.
+_MAC_BLUE = "#0a82ff"
+_MAC_ACCENTS = {
+    -1: "#8c8c8c", 0: "#ff5257", 1: "#f7821b", 2: "#ffc601",
+    3: "#62ba46", 4: _MAC_BLUE, 5: "#9750a6", 6: "#f74f9e",
+}
+
+
+def get_system_accent():
+    """Couleur d'accentuation du systeme -> (accent, survol). Bleu Robloader par defaut (Linux/erreur)."""
+    try:
+        if sys.platform.startswith('win'):
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                r"SOFTWARE\Microsoft\Windows\DWM") as k:
+                val = winreg.QueryValueEx(k, "AccentColor")[0]  # DWORD 0xAABBGGRR
+            accent = '#%02x%02x%02x' % (val & 0xFF, (val >> 8) & 0xFF, (val >> 16) & 0xFF)
+            return accent, _darken_hex(accent)
+        if sys.platform == 'darwin':
+            out = subprocess.run(["defaults", "read", "-g", "AppleAccentColor"],
+                                 capture_output=True, text=True, timeout=2)
+            if out.returncode == 0 and out.stdout.strip():
+                accent = _MAC_ACCENTS.get(int(out.stdout.strip()), _MAC_BLUE)
+            else:
+                accent = _MAC_BLUE  # « Multicolore » par defaut
+            return accent, _darken_hex(accent)
+    except Exception:
+        pass
+    return ACCENT_DEFAULT, ACCENT_HOVER_DEFAULT
+
+
+ACCENT, ACCENT_HOVER = get_system_accent()
+ACCENT_TEXT = accent_text_color(ACCENT)
+
+
+# --- Profils de site : pilotent les options pertinentes selon la source ---
 # 'caps' = capacites du site : sous-titres, miniature, et "echelle de qualite" (YouTube a un vrai
 # ladder 480p->4K ; les autres servent surtout un flux unique -> on prend "best" et on masque le menu).
 DEFAULT_PROFILE = {
     'id': 'default', 'label': 'Vidéo', 'domains': (),
-    'accent': ACCENT, 'hover': ACCENT_HOVER,
     'placeholder': "Colle un lien (YouTube, TikTok, Instagram, X, Weibo)…",
     'caps': {'subtitles': True, 'thumbnail': True, 'quality_ladder': True},
 }
 SITE_PROFILES = [
     {'id': 'youtube', 'label': 'YouTube', 'domains': ('youtube.com', 'youtu.be'),
-     'accent': '#FF0000', 'hover': '#CC0000', 'placeholder': "Colle un lien YouTube ici…",
+     'placeholder': "Colle un lien YouTube ici…",
      'caps': {'subtitles': True, 'thumbnail': True, 'quality_ladder': True}},
     {'id': 'tiktok', 'label': 'TikTok', 'domains': ('tiktok.com',),
-     'accent': '#FE2C55', 'hover': '#D81E43', 'placeholder': "Colle un lien TikTok ici…",
+     'placeholder': "Colle un lien TikTok ici…",
      'caps': {'subtitles': False, 'thumbnail': True, 'quality_ladder': False}},
     {'id': 'instagram', 'label': 'Instagram', 'domains': ('instagram.com', 'instagr.am'),
-     'accent': '#DD2A7B', 'hover': '#B82568', 'placeholder': "Colle un lien Instagram ici…",
+     'placeholder': "Colle un lien Instagram ici…",
      'caps': {'subtitles': False, 'thumbnail': False, 'quality_ladder': False}},
     {'id': 'x', 'label': 'X', 'domains': ('twitter.com', 'x.com'),
-     'accent': '#101114', 'hover': '#26282c', 'placeholder': "Colle un lien X (Twitter) ici…",
+     'placeholder': "Colle un lien X (Twitter) ici…",
      'caps': {'subtitles': False, 'thumbnail': False, 'quality_ladder': False}},
     {'id': 'weibo', 'label': 'Weibo', 'domains': ('weibo.com', 'weibo.cn'),
-     'accent': '#E6162D', 'hover': '#C01020', 'placeholder': "Colle un lien Weibo ici…",
+     'placeholder': "Colle un lien Weibo ici…",
      'caps': {'subtitles': False, 'thumbnail': False, 'quality_ladder': False}},
 ]
 
@@ -547,7 +599,7 @@ class RobloaderApp(ctk.CTk):
                       fg_color=BTN_SECONDARY, hover_color=BTN_SECONDARY_HOVER, text_color=TEXT_SECONDARY,
                       command=self.update_banner.pack_forget).pack(side="right", padx=(6, 12), pady=6)
         ctk.CTkButton(self.update_banner, text="Mettre à jour", width=120, height=28,
-                      fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                      fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color=ACCENT_TEXT,
                       command=self._start_update).pack(side="right", padx=6, pady=6)
 
         # Ligne 1 : URL + qualite + destination + telecharger
@@ -558,7 +610,7 @@ class RobloaderApp(ctk.CTk):
         self.url_entry = ctk.CTkEntry(row1, placeholder_text=DEFAULT_PROFILE['placeholder'], height=38)
         self.url_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
         self.url_entry.bind("<Return>", lambda e: self.start_download_thread())
-        # Detection de la source au collage / a la frappe -> theming + options adaptes (debounce).
+        # Detection de la source au collage / a la frappe -> options adaptees au site (debounce).
         self.url_entry.bind("<KeyRelease>", lambda e: self._schedule_site_detect())
         self.url_entry.bind("<<Paste>>", lambda e: self._schedule_site_detect())
 
@@ -567,8 +619,8 @@ class RobloaderApp(ctk.CTk):
             self.config_data.get("quality", DEFAULT_QUALITY) in QUALITY_LABELS else DEFAULT_QUALITY)
         self.quality_menu = ctk.CTkOptionMenu(
             row1, values=QUALITY_LABELS, variable=self.quality_var, width=170, height=38,
-            command=self._on_quality_change, fg_color=CARD, button_color=BTN_SECONDARY,
-            button_hover_color=BTN_SECONDARY_HOVER, text_color=TEXT_SECONDARY)
+            command=self._on_quality_change, fg_color=CARD, button_color=ACCENT,
+            button_hover_color=ACCENT_HOVER, text_color=TEXT_SECONDARY)
         self.quality_menu.grid(row=0, column=1, padx=4)
 
         self.folder_btn = ctk.CTkButton(row1, text="Destination", width=110, height=38,
@@ -577,7 +629,7 @@ class RobloaderApp(ctk.CTk):
         self.folder_btn.grid(row=0, column=2, padx=4)
 
         self.download_btn = ctk.CTkButton(row1, text="Télécharger", width=130, height=38,
-                                         fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                                         fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color=ACCENT_TEXT,
                                          font=("Helvetica", 13, "bold"),
                                          command=self.start_download_thread)
         self.download_btn.grid(row=0, column=3, padx=(4, 0))
@@ -600,7 +652,9 @@ class RobloaderApp(ctk.CTk):
         row3.pack(fill="x", padx=24, pady=(4, 2))
         self.transcode_var = tk.BooleanVar(value=bool(self.config_data.get("transcode", True)))
         self.transcode_chk = ctk.CTkCheckBox(row3, text="Transcodage", variable=self.transcode_var,
-                                             command=self._on_transcode_change, height=28)
+                                             command=self._on_transcode_change, height=28,
+                                             fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                                             checkmark_color=ACCENT_TEXT)
         self.transcode_chk.pack(side="left", padx=(0, 16))
         ctk.CTkLabel(row3, text="Sortie  ", font=("Helvetica", 12, "bold")).pack(side="left")
         transcode_on = self.transcode_var.get()
@@ -612,25 +666,24 @@ class RobloaderApp(ctk.CTk):
         self.output_menu = ctk.CTkOptionMenu(
             row3, values=valid_formats, variable=self.output_var, width=170, height=32,
             command=lambda v: self._save_pref("output", v),
-            fg_color=CARD, button_color=BTN_SECONDARY, button_hover_color=BTN_SECONDARY_HOVER,
+            fg_color=CARD, button_color=ACCENT, button_hover_color=ACCENT_HOVER,
             text_color=TEXT_SECONDARY)
         self.output_menu.pack(side="left", padx=(0, 16))
         self.subs_var = tk.BooleanVar(value=bool(self.config_data.get("subs", False)))
         self.subs_chk = ctk.CTkCheckBox(row3, text="Sous-titres (.srt)", variable=self.subs_var,
                                         command=lambda: self._save_pref("subs", self.subs_var.get()),
-                                        height=28)
+                                        height=28, fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                                        checkmark_color=ACCENT_TEXT)
         self.subs_chk.pack(side="left", padx=(0, 14))
         self.thumb_var = tk.BooleanVar(value=bool(self.config_data.get("thumb", False)))
         self.thumb_chk = ctk.CTkCheckBox(row3, text="Miniature", variable=self.thumb_var,
                                          command=lambda: self._save_pref("thumb", self.thumb_var.get()),
-                                         height=28)
+                                         height=28, fg_color=ACCENT, hover_color=ACCENT_HOVER,
+                                         checkmark_color=ACCENT_TEXT)
         self.thumb_chk.pack(side="left")
 
-        # Etat du theming par site (couleur courante des boutons + handles d'animation/debounce).
+        # Profil de source courant (pilote les options dispo) + debounce de la detection d'URL.
         self._cur_profile = DEFAULT_PROFILE
-        self._cur_accent = DEFAULT_PROFILE['accent']
-        self._cur_hover = DEFAULT_PROFILE['hover']
-        self._accent_after = None
         self._site_detect_after = None
 
         # Ligne d'etat (destination + cookies/deno)
@@ -685,7 +738,7 @@ class RobloaderApp(ctk.CTk):
                 self.output_var.set(OUT_VIDEO_NATIVE)
                 self._save_pref("output", OUT_VIDEO_NATIVE)
 
-    # ---------- Theming / detection de la source ----------
+    # ---------- Detection de la source ----------
     def _schedule_site_detect(self):
         # Debounce : on attend ~150 ms apres la derniere frappe/collage avant de detecter.
         if self._site_detect_after is not None:
@@ -702,14 +755,8 @@ class RobloaderApp(ctk.CTk):
             self.apply_profile(profile)
 
     def apply_profile(self, profile):
-        """Applique la DA d'un site : fondu de couleur des boutons + options dispo.
-
-        NB : on ne touche PAS au placeholder dynamiquement. `CTkEntry.configure(placeholder_text=…)`
-        peut reinjecter le texte grise comme vrai texte dans le champ (bug visible au Cmd+A/Cmd+V :
-        « Colle u<lien>n lien… »). Le placeholder reste donc fixe et neutre (defini a la creation).
-        """
+        """Adapte les options affichees a la source detectee (sous-titres / miniature / qualite)."""
         self._cur_profile = profile
-        self._animate_accent(profile['accent'], profile['hover'])
         self.apply_caps(profile)
 
     def apply_caps(self, profile):
@@ -731,54 +778,6 @@ class RobloaderApp(ctk.CTk):
             self.quality_menu.grid()
         else:
             self.quality_menu.grid_remove()
-
-    @staticmethod
-    def _hex_to_rgb(h):
-        h = h.lstrip('#')
-        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
-
-    @staticmethod
-    def _rgb_to_hex(rgb):
-        return '#%02x%02x%02x' % tuple(max(0, min(255, int(round(c)))) for c in rgb)
-
-    def _set_accent(self, accent, hover):
-        try:
-            self.download_btn.configure(fg_color=accent, hover_color=hover)
-            self.quality_menu.configure(button_color=accent, button_hover_color=hover)
-            self.output_menu.configure(button_color=accent, button_hover_color=hover)
-            # Les cases a cocher prennent aussi la couleur du site (remplissage + survol).
-            for chk in (self.transcode_chk, self.subs_chk, self.thumb_chk):
-                chk.configure(fg_color=accent, hover_color=hover)
-        except Exception:
-            pass
-
-    def _animate_accent(self, end_accent, end_hover, steps=15, interval=16):
-        """Fondu enchaine : interpole en RGB la couleur courante -> couleur du site (~240 ms)."""
-        if self._accent_after is not None:
-            try:
-                self.after_cancel(self._accent_after)
-            except Exception:
-                pass
-            self._accent_after = None
-        start_a = self._hex_to_rgb(self._cur_accent)
-        start_h = self._hex_to_rgb(self._cur_hover)
-        end_a = self._hex_to_rgb(end_accent)
-        end_h = self._hex_to_rgb(end_hover)
-
-        def lerp(a, b, t):
-            return [a[i] + (b[i] - a[i]) * t for i in range(3)]
-
-        def frame(i):
-            t = i / steps
-            self._set_accent(self._rgb_to_hex(lerp(start_a, end_a, t)),
-                             self._rgb_to_hex(lerp(start_h, end_h, t)))
-            if i < steps:
-                self._accent_after = self.after(interval, lambda: frame(i + 1))
-            else:
-                self._cur_accent, self._cur_hover = end_accent, end_hover
-                self._accent_after = None
-
-        frame(1)
 
     # ---------- Actions ----------
     def choose_folder(self):
@@ -1321,7 +1320,7 @@ class RobloaderApp(ctk.CTk):
                         text_color=ERR_RED))
                     self.ui(lambda: action_btn.configure(
                         text="Réparer", state="normal",
-                        fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color="#FFFFFF",
+                        fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color=ACCENT_TEXT,
                         command=self.open_cookie_help))
                 else:
                     self.ui(lambda m=msg: status_lbl.configure(text=f"Échec : {m}", text_color=ERR_RED))
