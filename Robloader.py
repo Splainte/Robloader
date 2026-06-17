@@ -14,7 +14,7 @@ import webbrowser
 COOKIE_FIX_URL = "https://docs.google.com/document/d/1zCuLswlQeOCV-C7bQWlmi6Ix-OcmPy252RCZSjAeKF4/"
 
 # Version courante de l'app (a bumper a CHAQUE release, en phase avec le tag git vX.Y.Z).
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 
 # Verification de mise a jour : le repo est PUBLIC, donc l'API GitHub Releases est lisible sans
 # aucune authentification (ni token embarque). On compare le dernier tag a APP_VERSION et, si plus
@@ -457,6 +457,7 @@ class RobloaderApp(ctk.CTk):
         self.geometry("840x640")
         self.minsize(760, 560)
         self._last_appearance = None  # pour re-appliquer le chrome Windows au changement de theme
+        self._last_accent = (ACCENT, ACCENT_HOVER)  # accent systeme courant (suivi en live)
 
         self.task_counter = 0
         self.active_tasks = {}
@@ -520,13 +521,36 @@ class RobloaderApp(ctk.CTk):
         self._check_update_async()
 
     def _watch_system_theme(self):
-        """Detecte le mode courant (clair/sombre, resolu meme en mode "System") et, a chaque
-        changement, re-applique le chrome natif de la fenetre. Se reprogramme toutes les 3 s."""
+        """Detecte le mode clair/sombre ET la couleur d'accentuation du systeme et, a chaque
+        changement, re-applique le chrome natif + l'accent des controles. Se reprogramme toutes les 3 s."""
         mode = ctk.get_appearance_mode()
         if mode != self._last_appearance:
             self._last_appearance = mode
             self._apply_window_chrome()
+        accent = get_system_accent()
+        if accent != self._last_accent:
+            self._last_accent = accent
+            self._apply_accent(accent)
         self.after(3000, self._watch_system_theme)
+
+    def _apply_accent(self, accent_pair):
+        """Re-applique l'accent systeme a chaud (changement dans les reglages OS app ouverte).
+        Met a jour les globales (pour les widgets crees plus tard : bouton « Reparer ») puis
+        reconfigure les controles deja affiches. Le premier-plan suit accent_text_color() partout."""
+        global ACCENT, ACCENT_HOVER, ACCENT_TEXT
+        ACCENT, ACCENT_HOVER = accent_pair
+        ACCENT_TEXT = accent_text_color(ACCENT)
+        for btn in (self.download_btn, getattr(self, "update_btn", None)):
+            if btn is not None:
+                try:
+                    btn.configure(fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color=ACCENT_TEXT)
+                except Exception:
+                    pass
+        for chk in (self.transcode_chk, self.subs_chk, self.thumb_chk):
+            try:
+                chk.configure(fg_color=ACCENT, hover_color=ACCENT_HOVER, checkmark_color=ACCENT_TEXT)
+            except Exception:
+                pass
 
     def _apply_window_chrome(self):
         """Windows : barre de titre qui suit le thème clair/sombre (sa couleur uniquement, aucune
@@ -598,9 +622,10 @@ class RobloaderApp(ctk.CTk):
         ctk.CTkButton(self.update_banner, text="Plus tard", width=80, height=28,
                       fg_color=BTN_SECONDARY, hover_color=BTN_SECONDARY_HOVER, text_color=TEXT_SECONDARY,
                       command=self.update_banner.pack_forget).pack(side="right", padx=(6, 12), pady=6)
-        ctk.CTkButton(self.update_banner, text="Mettre à jour", width=120, height=28,
-                      fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color=ACCENT_TEXT,
-                      command=self._start_update).pack(side="right", padx=6, pady=6)
+        self.update_btn = ctk.CTkButton(self.update_banner, text="Mettre à jour", width=120, height=28,
+                                         fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color=ACCENT_TEXT,
+                                         command=self._start_update)
+        self.update_btn.pack(side="right", padx=6, pady=6)
 
         # Ligne 1 : URL + qualite + destination + telecharger
         row1 = ctk.CTkFrame(self, fg_color="transparent")
@@ -619,8 +644,8 @@ class RobloaderApp(ctk.CTk):
             self.config_data.get("quality", DEFAULT_QUALITY) in QUALITY_LABELS else DEFAULT_QUALITY)
         self.quality_menu = ctk.CTkOptionMenu(
             row1, values=QUALITY_LABELS, variable=self.quality_var, width=170, height=38,
-            command=self._on_quality_change, fg_color=CARD, button_color=ACCENT,
-            button_hover_color=ACCENT_HOVER, text_color=TEXT_SECONDARY)
+            command=self._on_quality_change, fg_color=CARD, button_color=BTN_SECONDARY,
+            button_hover_color=BTN_SECONDARY_HOVER, text_color=TEXT_SECONDARY)
         self.quality_menu.grid(row=0, column=1, padx=4)
 
         self.folder_btn = ctk.CTkButton(row1, text="Destination", width=110, height=38,
@@ -666,7 +691,7 @@ class RobloaderApp(ctk.CTk):
         self.output_menu = ctk.CTkOptionMenu(
             row3, values=valid_formats, variable=self.output_var, width=170, height=32,
             command=lambda v: self._save_pref("output", v),
-            fg_color=CARD, button_color=ACCENT, button_hover_color=ACCENT_HOVER,
+            fg_color=CARD, button_color=BTN_SECONDARY, button_hover_color=BTN_SECONDARY_HOVER,
             text_color=TEXT_SECONDARY)
         self.output_menu.pack(side="left", padx=(0, 16))
         self.subs_var = tk.BooleanVar(value=bool(self.config_data.get("subs", False)))

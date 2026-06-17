@@ -2,6 +2,20 @@
 
 Toutes les évolutions notables de Robloader.
 
+## [1.2.1] — 2026-06-17
+
+### Modifié
+- **Accent système suivi en direct.** Changer la couleur d'accentuation dans les réglages de
+  Windows/macOS pendant que l'app est ouverte met désormais à jour les boutons et cases à cocher
+  immédiatement (même mécanisme de surveillance que le thème clair/sombre), sans relancer l'app.
+
+### Corrigé
+- **Plus de mélange noir/blanc sur l'accent.** Avec un accent clair (ex. jaune), le texte du bouton
+  « Télécharger » et les coches passaient en noir, mais les chevrons des menus déroulants restaient
+  clairs — un mix incohérent. Les carrés de chevron des menus (Qualité / Sortie) reviennent en gris
+  neutre ; l'accent ne colore plus que les vrais éléments d'action (Télécharger, Mettre à jour,
+  Réparer, cases à cocher), tous avec un premier-plan noir ou blanc uniforme selon la luminance.
+
 ## [1.2.0] — 2026-06-17
 
 ### Modifié
@@ -216,6 +230,7 @@ avec ffmpeg, ffprobe et Deno **embarqués** (rien à installer).
 - `ffprobe` désormais embarqué (fini `ffprobe not found`).
 - Résolu le conflit de merge qui empêchait le fichier de s'exécuter.
 
+[1.2.1]: https://github.com/Splainte/Robloader/releases/tag/v1.2.1
 [1.2.0]: https://github.com/Splainte/Robloader/releases/tag/v1.2.0
 [1.1.4]: https://github.com/Splainte/Robloader/releases/tag/v1.1.4
 [1.1.3]: https://github.com/Splainte/Robloader/releases/tag/v1.1.3
