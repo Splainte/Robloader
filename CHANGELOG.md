@@ -2,6 +2,18 @@
 
 Toutes les évolutions notables de Robloader.
 
+## [1.2.0] — 2026-06-17
+
+### Modifié
+- **Les boutons suivent la couleur d'accentuation du système.** Fini le changement de couleur des
+  boutons selon le site détecté (YouTube en rouge, TikTok en rose…). L'accent de l'interface
+  (bouton « Télécharger », menus déroulants, cases à cocher) reflète désormais la **couleur
+  d'accentuation choisie dans les réglages système** : registre DWM sur Windows, `AppleAccentColor`
+  sur macOS, avec repli sur le bleu Robloader si indisponible (Linux). Le texte des boutons passe
+  automatiquement en noir ou blanc selon la luminance de l'accent pour rester lisible (ex. accent
+  jaune). La détection du site continue d'adapter les options disponibles (sous-titres, miniature,
+  échelle de qualité).
+
 ## [1.1.4] — 2026-06-12
 
 ### Ajouté
@@ -204,6 +216,10 @@ avec ffmpeg, ffprobe et Deno **embarqués** (rien à installer).
 - `ffprobe` désormais embarqué (fini `ffprobe not found`).
 - Résolu le conflit de merge qui empêchait le fichier de s'exécuter.
 
+[1.2.0]: https://github.com/Splainte/Robloader/releases/tag/v1.2.0
+[1.1.4]: https://github.com/Splainte/Robloader/releases/tag/v1.1.4
+[1.1.3]: https://github.com/Splainte/Robloader/releases/tag/v1.1.3
+[1.1.2]: https://github.com/Splainte/Robloader/releases/tag/v1.1.2
 [1.1.1]: https://github.com/Splainte/Robloader/releases/tag/v1.1.1
 [1.1.0]: https://github.com/Splainte/Robloader/releases/tag/v1.1.0
 [1.0.8]: https://github.com/Splainte/Robloader/releases/tag/v1.0.8
