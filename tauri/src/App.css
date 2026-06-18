@@ -18,7 +18,17 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+/* Windows : titre a gauche, boutons custom a droite. */
+.app[data-os="windows"] .titlebar {
   padding-left: 16px;
+}
+
+/* macOS : on degage la zone des feux natifs (haut-gauche). */
+.app[data-os="macos"] .titlebar {
+  height: 38px;
+  padding-left: 80px;
 }
 
 .titlebar__title {

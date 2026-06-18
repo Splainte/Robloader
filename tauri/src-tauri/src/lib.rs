@@ -33,10 +33,16 @@ pub fn run() {
             )
             .expect("Vibrancy : uniquement supporte sur macOS");
 
-            // Windows 11 : Mica natif. None => suit le theme clair/sombre du systeme.
+            // Windows 11 : on reste frameless (titlebar custom) => decorations OFF.
+            // (decorations vaut true par defaut en config car requis pour la barre
+            // native macOS ; on l'enleve ici uniquement cote Windows.)
             #[cfg(target_os = "windows")]
-            apply_mica(&window, None)
-                .expect("Mica : uniquement supporte sur Windows 11");
+            {
+                let _ = window.set_decorations(false);
+                // Mica natif. None => suit le theme clair/sombre du systeme.
+                apply_mica(&window, None)
+                    .expect("Mica : uniquement supporte sur Windows 11");
+            }
 
             Ok(())
         })
