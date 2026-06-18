@@ -11,18 +11,23 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
-// macOS : par defaut WKWebView etire un snapshot ancre dans un coin pendant
-// l'animation de zoom/resize, d'ou le contenu qui "saute" puis se recentre.
-// On force chaque NSView a redessiner pendant le resize
-// (NSViewLayerContentsRedrawDuringViewResize = 2), recursivement.
+// macOS : le contenu centre "saute" (ancre dans un coin) pendant resize/zoom.
+// Deux cas a couvrir sur chaque NSView, recursivement :
+//  - live resize (tirer les coins) : redessiner pendant le resize
+//    => NSViewLayerContentsRedrawDuringViewResize = 2
+//  - animation de zoom (double-clic barre) : ce n'est PAS un live resize, la
+//    couche repositionne son ancien bitmap selon layerContentsPlacement, ancre
+//    dans un coin par defaut => on force le placement au centre
+//    => NSViewLayerContentsPlacementCenter = 3
 #[cfg(target_os = "macos")]
-unsafe fn force_redraw_during_resize(view: *mut objc2::runtime::AnyObject) {
+unsafe fn stabilize_content_on_resize(view: *mut objc2::runtime::AnyObject) {
     use objc2::msg_send;
 
     if view.is_null() {
         return;
     }
     let _: () = msg_send![view, setLayerContentsRedrawPolicy: 2isize];
+    let _: () = msg_send![view, setLayerContentsPlacement: 3isize];
 
     let subviews: *mut objc2::runtime::AnyObject = msg_send![view, subviews];
     if subviews.is_null() {
@@ -31,7 +36,7 @@ unsafe fn force_redraw_during_resize(view: *mut objc2::runtime::AnyObject) {
     let count: usize = msg_send![subviews, count];
     for i in 0..count {
         let sub: *mut objc2::runtime::AnyObject = msg_send![subviews, objectAtIndex: i];
-        force_redraw_during_resize(sub);
+        stabilize_content_on_resize(sub);
     }
 }
 
@@ -63,7 +68,7 @@ pub fn run() {
                 if let Ok(ns_window) = window.ns_window() {
                     let content_view: *mut objc2::runtime::AnyObject =
                         objc2::msg_send![ns_window as *mut objc2::runtime::AnyObject, contentView];
-                    force_redraw_during_resize(content_view);
+                    stabilize_content_on_resize(content_view);
                 }
             }
 
