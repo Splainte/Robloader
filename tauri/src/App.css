@@ -1,7 +1,8 @@
 /* ============================================================
-   UI Robloader (Hello World)
-   Tout est transparent : on ne pose que du texte et des controles
-   par-dessus le materiau natif (Mica / Vibrancy).
+   UI Robloader (V2 — Tauri)
+   Tout est transparent : on pose texte + controles par-dessus le
+   materiau natif (Mica sur Windows 11, Vibrancy sur macOS).
+   L'aspect des controles s'adapte a l'OS via .app[data-os].
    ============================================================ */
 
 .app {
@@ -9,6 +10,17 @@
   flex-direction: column;
   height: 100%;
   background: transparent;
+  font-size: 13px;
+}
+
+/* Rayon des controles : macOS un peu plus arrondi, Windows 11 plus carre. */
+.app[data-os="macos"] {
+  --rl-radius: 7px;
+  --rl-radius-sm: 6px;
+}
+.app[data-os="windows"] {
+  --rl-radius: 5px;
+  --rl-radius-sm: 4px;
 }
 
 /* ---------- Titlebar custom (frameless) ---------- */
@@ -20,12 +32,9 @@
   justify-content: space-between;
 }
 
-/* Windows : titre a gauche, boutons custom a droite. */
 .app[data-os="windows"] .titlebar {
   padding-left: 16px;
 }
-
-/* macOS : on degage la zone des feux natifs (haut-gauche). */
 .app[data-os="macos"] .titlebar {
   height: 38px;
   padding-left: 80px;
@@ -54,42 +63,386 @@
   cursor: default;
   transition: background-color 0.12s ease;
 }
-
 .winbtn:hover {
   background-color: var(--rl-control-hover);
 }
-
 .winbtn--close:hover {
   background-color: #e81123;
   color: #fff;
 }
-
 .winbtn svg {
   display: block;
   shape-rendering: crispEdges;
 }
 
-/* ---------- Contenu ---------- */
+/* ---------- Icones (un seul SVG ; l'aspect change par OS) ---------- */
+.icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  stroke-width: 1.9;
+}
+/* SF Symbols : traits arrondis, un peu plus epais. */
+.app[data-os="macos"] .icon {
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Fluent : traits plus fins, jonctions nettes. */
+.app[data-os="windows"] .icon {
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- Contenu / formulaire ---------- */
 .content {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  padding: 4px 24px 20px;
+  gap: 10px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.row--main {
+  gap: 8px;
+  padding-top: 4px;
+}
+.row--clip,
+.row--options {
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.row__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  color: var(--rl-text);
+  white-space: nowrap;
+}
+.row__label-icon {
+  width: 15px;
+  height: 15px;
+  color: var(--rl-text-muted);
+}
+.mini-label {
+  color: var(--rl-text-muted);
+  white-space: nowrap;
+}
+.hint {
+  color: var(--rl-text-muted);
+  font-size: 11.5px;
+}
+
+/* ---------- Surface de controle commune (champ / select) ---------- */
+.field,
+.input--time,
+.select {
+  background: var(--rl-field);
+  border: 1px solid var(--rl-stroke);
+  border-radius: var(--rl-radius);
+  transition: border-color 0.14s ease, box-shadow 0.14s ease,
+    background-color 0.14s ease;
+}
+.field:hover,
+.input--time:hover,
+.select:hover {
+  background: var(--rl-field-hover);
+}
+
+/* Champ URL : icone + input + chip source */
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px;
+}
+.field--url {
+  flex: 1 1 auto;
+  min-width: 180px;
+}
+.field__icon {
+  width: 16px;
+  height: 16px;
+  color: var(--rl-text-muted);
+}
+
+.input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--rl-text);
+  font: inherit;
+  user-select: text;
+}
+.input::placeholder {
+  color: var(--rl-text-muted);
+}
+
+/* Champs temps (standalone) */
+.input--time {
+  width: 76px;
+  height: 32px;
+  padding: 0 10px;
+  text-align: center;
+  color: var(--rl-text);
+  font: inherit;
+  outline: none;
+  user-select: text;
+}
+
+/* Chip de source detectee */
+.source-chip {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--rl-accent);
+  background: color-mix(in srgb, var(--rl-accent) 14%, transparent);
+}
+
+/* ---------- Focus : signature visuelle par OS ---------- */
+/* macOS : anneau d'accent lumineux tout autour. */
+.app[data-os="macos"] .field:focus-within,
+.app[data-os="macos"] .input--time:focus {
+  border-color: var(--rl-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rl-accent) 35%, transparent);
+}
+/* Windows 11 : la bordure du bas s'epaissit en accent (Fluent TextBox). */
+.app[data-os="windows"] .field:focus-within,
+.app[data-os="windows"] .input--time:focus {
+  border-color: var(--rl-stroke);
+  box-shadow: inset 0 -2px 0 0 var(--rl-accent);
+}
+
+/* ---------- Select ---------- */
+.select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 38px;
+}
+.select__native {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--rl-text);
+  font: inherit;
+  height: 100%;
+  padding: 0 30px 0 12px;
+  cursor: default;
+  max-width: 200px;
+}
+.select__native option {
+  color: #1c1c1e;
+}
+.select__chevron {
+  position: absolute;
+  right: 9px;
+  width: 15px;
+  height: 15px;
+  pointer-events: none;
+  color: var(--rl-text-muted);
+}
+.row--options .select {
+  height: 32px;
+}
+
+/* ---------- Boutons ---------- */
+.btn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  text-align: center;
-  padding: 24px;
+  gap: 7px;
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--rl-radius);
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: default;
+  transition: background-color 0.14s ease, border-color 0.14s ease,
+    transform 0.06s ease, box-shadow 0.14s ease;
+}
+.btn--sm {
+  height: 30px;
+  padding: 0 12px;
+  font-weight: 500;
+}
+.btn__icon {
+  width: 16px;
+  height: 16px;
 }
 
-.hero {
-  margin: 0;
-  font-size: 44px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
+/* Secondaire */
+.btn--secondary {
+  background: var(--rl-field);
+  border-color: var(--rl-stroke);
+  color: var(--rl-text);
+}
+.btn--secondary:hover {
+  background: var(--rl-field-hover);
+}
+.btn--secondary:active {
+  background: var(--rl-control-active);
 }
 
-.subtitle {
+/* Accent */
+.btn--accent {
+  background: var(--rl-accent);
+  color: var(--rl-accent-text);
+}
+.btn--accent:hover {
+  background: var(--rl-accent-hover);
+}
+.btn--accent:active {
+  filter: brightness(0.94);
+}
+
+/* Hover signature : macOS = leger enfoncement ; Windows 11 = "lift" subtil. */
+.app[data-os="macos"] .btn:active {
+  transform: scale(0.97);
+}
+.app[data-os="windows"] .btn--accent:hover {
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--rl-accent) 45%, transparent);
+}
+.app[data-os="windows"] .btn:active {
+  transform: translateY(0.5px);
+  filter: brightness(0.96);
+}
+
+/* ---------- Cases a cocher ---------- */
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: default;
+  white-space: nowrap;
+}
+.check input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.check__box {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--rl-stroke-strong);
+  background: var(--rl-field);
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+.app[data-os="macos"] .check__box {
+  border-radius: 5px;
+}
+.app[data-os="windows"] .check__box {
+  border-radius: 3px;
+}
+.check:hover .check__box {
+  border-color: var(--rl-text-muted);
+}
+.check__mark {
+  width: 14px;
+  height: 14px;
+  color: var(--rl-accent-text);
+  stroke-width: 2.4;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.check input:checked + .check__box {
+  background: var(--rl-accent);
+  border-color: var(--rl-accent);
+}
+.check input:checked + .check__box .check__mark {
+  opacity: 1;
+  transform: scale(1);
+}
+.check input:focus-visible + .check__box {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rl-accent) 35%, transparent);
+}
+.check__label {
+  color: var(--rl-text);
+}
+
+/* ---------- Ligne d'etat ---------- */
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--rl-text-muted);
+}
+.status-line__icon {
+  width: 14px;
+  height: 14px;
+}
+.status-line__dot {
+  opacity: 0.6;
+}
+
+/* ---------- File de telechargements ---------- */
+.queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+.queue-head__title {
   margin: 0;
   font-size: 14px;
+  font-weight: 600;
+}
+
+.queue {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--rl-stroke);
+  border-radius: var(--rl-radius);
+  background: color-mix(in srgb, var(--rl-field) 50%, transparent);
+}
+
+.queue__empty {
+  height: 100%;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
   color: var(--rl-text-muted);
+  padding: 24px;
+}
+.queue__empty-icon {
+  width: 34px;
+  height: 34px;
+  opacity: 0.6;
+  margin-bottom: 4px;
+}
+.queue__empty p {
+  margin: 0;
+  font-weight: 600;
+  color: var(--rl-text);
+}
+.queue__empty span {
+  font-size: 12px;
 }
