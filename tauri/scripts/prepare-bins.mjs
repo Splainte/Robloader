@@ -7,7 +7,7 @@
  */
 
 import { execSync } from "child_process";
-import { copyFileSync, chmodSync, mkdirSync, existsSync } from "fs";
+import { copyFileSync, chmodSync, mkdirSync, existsSync, renameSync, unlinkSync } from "fs";
 import { createWriteStream } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -82,6 +82,34 @@ if (existsSync(ytdlpDest)) {
   await download(url, ytdlpDest);
   if (!isWin) chmodSync(ytdlpDest, 0o755);
   console.log(`✓ → ${ytdlpDest}`);
+}
+
+// ── deno ───────────────────────────────────────────────────────────────────
+// Deno distribue ses binaires en ZIP. On détecte l'archi du triple.
+const denoDest = join(binDir, `deno-${triple}${ext}`);
+if (existsSync(denoDest)) {
+  console.log(`⚡ deno déjà présent, téléchargement ignoré.`);
+} else {
+  // Mapping triple Rust → nom de release Deno (même convention de triple).
+  const denoZipUrl = `https://github.com/denoland/deno/releases/latest/download/deno-${triple}.zip`;
+  const zipPath = denoDest + ".zip";
+  process.stdout.write(`⬇  deno (${denoZipUrl}) … `);
+  await download(denoZipUrl, zipPath);
+
+  // Dézip : unzip (macOS/Linux) ou PowerShell (Windows).
+  const tmpDir = join(binDir, `deno_unzip_${triple}`);
+  mkdirSync(tmpDir, { recursive: true });
+  if (isWin) {
+    execSync(`powershell -Command "Expand-Archive -Force '${zipPath}' '${tmpDir}'"`, { stdio: "pipe" });
+  } else {
+    execSync(`unzip -o "${zipPath}" -d "${tmpDir}"`, { stdio: "pipe" });
+  }
+  const extracted = join(tmpDir, isWin ? "deno.exe" : "deno");
+  renameSync(extracted, denoDest);
+  if (!isWin) chmodSync(denoDest, 0o755);
+  try { unlinkSync(zipPath); } catch {}
+  try { execSync(`rm -rf "${tmpDir}"`); } catch {}
+  console.log(`✓ → ${denoDest}`);
 }
 
 console.log("\nTous les binaires sont prêts. Lance npm run tauri build.");

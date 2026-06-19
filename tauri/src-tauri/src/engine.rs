@@ -248,7 +248,16 @@ fn resolve_binary(app: &AppHandle, name: &str) -> String {
 }
 
 // Deno present ? (requis pour le nsig YouTube -> 4K).
+// Verifie d'abord le bundle (exe dir), puis PATH + chemins systeme.
 fn has_js_runtime() -> bool {
+    let name = if cfg!(windows) { "deno.exe" } else { "deno" };
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            if dir.join(name).exists() {
+                return true;
+            }
+        }
+    }
     which("deno")
 }
 
@@ -440,6 +449,24 @@ fn run_proc<F: FnMut(&str)>(
     mut cmd: Command,
     mut on_line: F,
 ) -> std::io::Result<(i32, String)> {
+    // Prepend exe dir + chemins systeme dans PATH du sous-processus.
+    // Necessaire pour que yt-dlp trouve le deno embarque (--remote-components).
+    {
+        let cur = std::env::var_os("PATH").unwrap_or_default();
+        let exe_dir: Vec<PathBuf> = std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent().map(|p| p.to_path_buf()))
+            .into_iter()
+            .collect();
+        if let Ok(new_path) = std::env::join_paths(
+            exe_dir
+                .into_iter()
+                .chain(std::env::split_paths(&cur))
+                .chain(extra_search_dirs()),
+        ) {
+            cmd.env("PATH", new_path);
+        }
+    }
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).stdin(Stdio::null());
     no_window(&mut cmd);
 
@@ -578,24 +605,53 @@ fn run_ffmpeg(
 
 // ---------- Sondage codec video ----------
 
-fn probe_video_codec(ffprobe: &str, path: &Path) -> String {
+struct VideoProbe {
+    codec: String,
+    width: u32,
+    height: u32,
+}
+
+fn probe_video(ffprobe: &str, path: &Path) -> VideoProbe {
     let mut cmd = Command::new(ffprobe);
     cmd.args([
-        "-v",
-        "error",
-        "-select_streams",
-        "v:0",
-        "-show_entries",
-        "stream=codec_name",
-        "-of",
-        "default=nw=1:nk=1",
+        "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=codec_name,width,height",
+        "-of", "default=nw=1",
     ])
     .arg(path);
     no_window(&mut cmd);
-    match cmd.output() {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_lowercase(),
+    let out = match cmd.output() {
+        Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
         Err(_) => String::new(),
+    };
+    let get = |key: &str| -> String {
+        out.lines()
+            .find(|l| l.starts_with(&format!("{key}=")))
+            .and_then(|l| l.splitn(2, '=').nth(1))
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    };
+    VideoProbe {
+        codec: get("codec_name").to_lowercase(),
+        width: get("width").parse().unwrap_or(0),
+        height: get("height").parse().unwrap_or(0),
     }
+}
+
+fn resolution_label(width: u32, height: u32) -> String {
+    let short = width.min(height);
+    if short == 0 {
+        return String::new();
+    }
+    const LADDER: &[u32] = &[2160, 1440, 1080, 720, 480, 360];
+    let best = LADDER
+        .iter()
+        .min_by_key(|&&r| (r as i64 - short as i64).unsigned_abs())
+        .copied()
+        .unwrap_or(short);
+    format!("{best}p")
 }
 
 // ---------- Utilitaires fichiers ----------
@@ -854,25 +910,25 @@ fn run_pipeline_inner(
         .unwrap_or("")
         .to_string();
 
-    // Titre affiche / nom de fichier.
+    // Convention : Titre (Extrait start-end) - Chaîne  (résolution ajoutée après probe).
     let mut display = video_title.clone();
-    if !channel.is_empty() {
-        display.push_str(&format!(" - {channel}"));
-    }
     if !opts.start.is_empty() || !opts.end.is_empty() {
         let s = if opts.start.is_empty() { "00:00" } else { &opts.start };
         let e = if opts.end.is_empty() { "Fin" } else { &opts.end };
         display.push_str(&format!(" (Extrait {s} - {e})"));
     }
-    let mut safe_title = sanitize_title(&display);
-    if safe_title.is_empty() {
-        safe_title = format!("video_{video_id}");
+    if !channel.is_empty() {
+        display.push_str(&format!(" - {channel}"));
+    }
+    let mut base_title = sanitize_title(&display);
+    if base_title.is_empty() {
+        base_title = format!("video_{video_id}");
     }
     emit(
         app,
         TaskUpdate {
             id,
-            title: Some(safe_title.clone()),
+            title: Some(base_title.clone()),
             ..Default::default()
         },
     );
@@ -914,12 +970,12 @@ fn run_pipeline_inner(
             .arg("--convert-subs")
             .arg("srt")
             .arg("-o")
-            .arg(download_dir.join(format!("{safe_title}.%(ext)s")));
+            .arg(download_dir.join(format!("{base_title}.%(ext)s")));
         apply_cookies(&mut cmd, &used_cookie);
         cmd.arg(url);
         let (_code, _err) = run_proc(handle, cmd, |_| {}).map_err(|e| e.to_string())?;
         check_cancel(handle)?;
-        let srts: Vec<PathBuf> = files_with_prefix(download_dir, &safe_title)
+        let srts: Vec<PathBuf> = files_with_prefix(download_dir, &base_title)
             .into_iter()
             .filter(|p| ext_lower(p) == "srt")
             .collect();
@@ -962,7 +1018,7 @@ fn run_pipeline_inner(
             .ok_or("Téléchargement audio échoué.")?;
 
         status(app, id, "Conversion audio…", "info");
-        final_path = download_dir.join(format!("{safe_title}.{audio_codec}"));
+        final_path = download_dir.join(format!("{base_title}.{audio_codec}"));
         let mut args: Vec<String> = vec!["-y".into(), "-progress".into(), "pipe:1".into()];
         args.extend(seek.clone());
         args.push("-i".into());
@@ -1050,7 +1106,15 @@ fn run_pipeline_inner(
                 })
                 .ok_or("Fichier téléchargé introuvable.")?;
             let actual_ext = ext_lower(&temp_file);
-            final_path = download_dir.join(format!("{safe_title}.{actual_ext}"));
+            let vp = probe_video(&bins.ffprobe, &temp_file);
+            let res = resolution_label(vp.width, vp.height);
+            let final_title = if res.is_empty() {
+                base_title.clone()
+            } else {
+                format!("{base_title} - {res}")
+            };
+            emit(app, TaskUpdate { id, title: Some(final_title.clone()), ..Default::default() });
+            final_path = download_dir.join(format!("{final_title}.{actual_ext}"));
             if has_range {
                 status(app, id, "Découpe du segment (copie flux)…", "info");
                 let mut args: Vec<String> = vec!["-y".into(), "-progress".into(), "pipe:1".into()];
@@ -1073,10 +1137,17 @@ fn run_pipeline_inner(
             }
         } else {
             let temp_file = download_dir.join(format!("{temp_base}.mp4"));
-            let codec = probe_video_codec(&bins.ffprobe, &temp_file);
-            let needs_transcode = want_prores || !PREMIERE_READY_CODECS.contains(&codec.as_str());
+            let vp = probe_video(&bins.ffprobe, &temp_file);
+            let needs_transcode = want_prores || !PREMIERE_READY_CODECS.contains(&vp.codec.as_str());
             let ext = if want_prores { "mov" } else { "mp4" };
-            final_path = download_dir.join(format!("{safe_title}.{ext}"));
+            let res = resolution_label(vp.width, vp.height);
+            let final_title = if res.is_empty() {
+                base_title.clone()
+            } else {
+                format!("{base_title} - {res}")
+            };
+            emit(app, TaskUpdate { id, title: Some(final_title.clone()), ..Default::default() });
+            final_path = download_dir.join(format!("{final_title}.{ext}"));
 
             if !needs_transcode && !has_range {
                 status(app, id, "Finalisation…", "info");
@@ -1187,7 +1258,7 @@ fn run_pipeline_inner(
         let dst_base = final_path
             .file_stem()
             .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| safe_title.clone());
+            .unwrap_or_else(|| base_title.clone());
         for p in files_with_prefix(download_dir, &src_prefix) {
             let e = ext_lower(&p);
             if !["srt", "jpg", "jpeg", "png", "webp"].contains(&e.as_str()) {
