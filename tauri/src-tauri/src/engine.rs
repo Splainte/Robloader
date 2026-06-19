@@ -188,7 +188,31 @@ fn default_downloads_dir() -> PathBuf {
     home.join("Downloads")
 }
 
-// Resolution d'un binaire : bundle (resources / a cote de l'exe) puis PATH.
+// Sur macOS les apps GUI n'heritent pas du PATH shell : Homebrew et les outils
+// installs manuellement ne sont pas trouves par std::process::Command.
+// On liste ici les chemins a sonder en plus du PATH recu.
+fn extra_search_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    if cfg!(target_os = "macos") {
+        // Homebrew Apple Silicon
+        dirs.push(PathBuf::from("/opt/homebrew/bin"));
+        // Homebrew Intel / MacPorts
+        dirs.push(PathBuf::from("/usr/local/bin"));
+        // pip install --user (Python 3.x)
+        if let Some(home) = std::env::var_os("HOME") {
+            let h = PathBuf::from(home);
+            dirs.push(h.join("Library/Python/3.12/bin"));
+            dirs.push(h.join("Library/Python/3.11/bin"));
+            dirs.push(h.join("Library/Python/3.10/bin"));
+            dirs.push(h.join(".local/bin"));
+        }
+        dirs.push(PathBuf::from("/usr/bin"));
+    }
+    dirs
+}
+
+// Resolution d'un binaire : bundle (resources / a cote de l'exe) puis PATH
+// puis chemins systeme connus (necessaire sur macOS GUI).
 fn resolve_binary(app: &AppHandle, name: &str) -> String {
     let exe_name = if cfg!(windows) {
         format!("{name}.exe")
@@ -206,13 +230,20 @@ fn resolve_binary(app: &AppHandle, name: &str) -> String {
             dirs.push(p.join("bin"));
         }
     }
+    // PATH herite (vide sur macOS GUI mais present sur Linux/Windows)
+    for p in std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()) {
+        dirs.push(p);
+    }
+    // Chemins supplementaires specifiques a l'OS (macOS Homebrew, etc.)
+    dirs.extend(extra_search_dirs());
+
     for d in dirs {
         let cand = d.join(&exe_name);
         if cand.exists() {
             return cand.to_string_lossy().to_string();
         }
     }
-    // Sinon on laisse le PATH resoudre le nom court.
+    // Ultime repli : nom court (marche si l'OS resout lui-meme).
     name.to_string()
 }
 
@@ -222,13 +253,17 @@ fn has_js_runtime() -> bool {
 }
 
 fn which(name: &str) -> bool {
-    let path = std::env::var_os("PATH").unwrap_or_default();
     let exe = if cfg!(windows) {
         format!("{name}.exe")
     } else {
         name.to_string()
     };
-    std::env::split_paths(&path).any(|p| p.join(&exe).exists())
+    let path_var = std::env::var_os("PATH").unwrap_or_default();
+    let path_dirs: Vec<PathBuf> = std::env::split_paths(&path_var).collect();
+    path_dirs
+        .into_iter()
+        .chain(extra_search_dirs())
+        .any(|p| p.join(&exe).exists())
 }
 
 // Liste ordonnee des navigateurs presents (cookies-from-browser), Firefox en premier.

@@ -468,10 +468,7 @@ function App() {
 
         {/* ---- Ligne 2 : extrait optionnel ---- */}
         <div className="row row--clip">
-          <span className="row__label">
-            <Icon name="scissors" className="row__label-icon" />
-            Extrait (optionnel)
-          </span>
+          <span className="row__label">Extrait (optionnel)</span>
           <span className="mini-label">Début</span>
           <input
             className="input input--time"
@@ -530,7 +527,6 @@ function App() {
         <div className="queue-head">
           <h2 className="queue-head__title">File de téléchargements</h2>
           <button className="btn btn--secondary btn--sm" onClick={clearList}>
-            <Icon name="broom" className="btn__icon" />
             <span>Nettoyer la liste</span>
           </button>
         </div>
