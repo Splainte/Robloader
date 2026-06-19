@@ -1,7 +1,12 @@
 name: build
 
-# Construit les artefacts Windows (.exe + installeur) et macOS (.dmg) a chaque tag vX.Y.Z,
-# ou manuellement (onglet Actions -> Run workflow). Attache les artefacts a la Release du tag.
+# Construit Robloader V2 (Tauri) pour Windows + macOS (Apple Silicon & Intel) a chaque tag vX.Y.Z,
+# ou manuellement (onglet Actions -> Run workflow). Attache les installeurs a la Release du tag.
+#
+# Livrables (noms natifs Tauri, attendus tels quels par l'updater interne pick_url dans engine.rs) :
+#   - Windows         : Robloader_<ver>_x64-setup.exe   (NSIS, ffmpeg/ffprobe/yt-dlp/deno embarques)
+#   - macOS Apple Sil. : Robloader_<ver>_aarch64.dmg
+#   - macOS Intel      : Robloader_<ver>_x64.dmg
 on:
   push:
     tags: ['v*']
@@ -10,77 +15,83 @@ on:
 permissions:
   contents: write   # necessaire pour attacher les artefacts a la Release
 
-env:
-  # Les actions tournent encore sur Node 20 (deprecie le 16/06/2026) -> on opte pour Node 24.
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
-  windows:
-    runs-on: windows-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            artifact: Robloader-windows
+            # NSIS genere par Tauri : un seul installeur auto-suffisant.
+            glob: tauri/src-tauri/target/release/bundle/nsis/*-setup.exe
+          - platform: macos-14        # Apple Silicon (aarch64)
+            artifact: Robloader-macos-arm
+            glob: tauri/src-tauri/target/release/bundle/dmg/*.dmg
+          - platform: macos-13        # Intel (x86_64)
+            artifact: Robloader-macos-intel
+            glob: tauri/src-tauri/target/release/bundle/dmg/*.dmg
+    runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      - uses: actions/setup-node@v4
         with:
-          python-version: '3.12'
-      - name: Build (.exe + installeur)
-        shell: pwsh
-        run: ./build_windows.ps1
-      # Un SEUL livrable Windows : l'installeur auto-suffisant (ffmpeg/deno inclus). Plus de zip
-      # portable -> equivalent direct du DMG macOS, pas de confusion pour l'utilisateur.
+          node-version: '20'
+
+      - name: Toolchain Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo (registry + target)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tauri/src-tauri/target
+          key: ${{ matrix.platform }}-cargo-${{ hashFiles('tauri/src-tauri/Cargo.lock') }}
+          restore-keys: ${{ matrix.platform }}-cargo-
+
+      - name: Dependances npm
+        working-directory: tauri
+        run: npm ci
+
+      - name: Telecharger les binaires embarques (yt-dlp/ffmpeg/ffprobe/deno)
+        working-directory: tauri
+        run: npm run prepare-bins
+
+      - name: Build Tauri (.app/.dmg ou .exe)
+        working-directory: tauri
+        run: npm run tauri build
+
+      - name: Collecter le livrable
+        shell: bash
+        run: |
+          mkdir -p out
+          cp ${{ matrix.glob }} out/
+          ls -la out/
+
       - uses: actions/upload-artifact@v4
         with:
-          name: Robloader-windows
-          path: installer/Output/Robloader-Setup-Windows.exe
+          name: ${{ matrix.artifact }}
+          path: out/*
 
-  macos:
-    # Un SEUL job sur le runner Apple Silicon (macos-14). Les runners Intel (macos-13) sont en
-    # cours de retrait chez GitHub -> on ne build plus Intel nativement. A la place on produit un
-    # DMG UNIVERSAL2 (Intel + Apple Silicon) : Python universal2 de python.org + binaires embarques
-    # fusionnes par lipo (cf build_macos.sh) + PyInstaller target_arch=universal2 (cf Robloader.spec).
-    runs-on: macos-14
-    env:
-      ROBLOADER_TARGET_ARCH: universal2
-    steps:
-      - uses: actions/checkout@v4
-      - name: Installer Python universal2 (python.org)
-        # setup-python ne fournit qu'un Python arm64 sur Apple Silicon ; l'installeur officiel
-        # python.org est universal2 (indispensable pour un .app universal2).
-        run: |
-          PY=3.12.8
-          curl -fsSL -o /tmp/python.pkg "https://www.python.org/ftp/python/${PY}/python-${PY}-macos11.pkg"
-          sudo installer -pkg /tmp/python.pkg -target /
-          echo "/Library/Frameworks/Python.framework/Versions/3.12/bin" >> "$GITHUB_PATH"
-      - name: Verifier que Python est bien universal2
-        run: |
-          which python3
-          python3 -c "import sys; print(sys.version)"
-          lipo -archs "$(python3 -c 'import sys; print(sys.executable)')"
-      - name: Build (.app + .dmg universal2)
-        run: |
-          chmod +x build_macos.sh
-          ./build_macos.sh
-      - name: Renommer le DMG
-        run: mv dist/Robloader.dmg dist/Robloader-Setup-macOS.dmg
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Robloader-macos
-          path: dist/Robloader-Setup-macOS.dmg
-
-  # Publie la Release UNE SEULE FOIS, avec les DEUX installeurs, apres la reussite des deux builds.
-  # Evite la fenetre de course ou la release etait publiee avec un seul asset (l'autre build encore
-  # en cours) -> l'app d'un utilisateur sur la plateforme manquante basculait sur le navigateur.
+  # Publie la Release UNE SEULE FOIS, avec les trois installeurs, apres la reussite des builds.
+  # Conserve l'etat draft : Robin valide puis publie a la main (la publication declenche la
+  # migration auto des utilisateurs V1, qui interrogent releases/latest).
   release:
-    needs: [windows, macos]
+    needs: [build]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
-      - name: Recuperer les installeurs des deux builds
+      - name: Recuperer les livrables des trois builds
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-      - name: Publier la release (Windows + macOS)
+
+      - name: Attacher a la release (draft)
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            artifacts/Robloader-windows/Robloader-Setup-Windows.exe
-            artifacts/Robloader-macos/Robloader-Setup-macOS.dmg
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          files: artifacts/**/*
