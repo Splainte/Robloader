@@ -14,7 +14,7 @@ import webbrowser
 COOKIE_FIX_URL = "https://docs.google.com/document/d/1zCuLswlQeOCV-C7bQWlmi6Ix-OcmPy252RCZSjAeKF4/"
 
 # Version courante de l'app (a bumper a CHAQUE release, en phase avec le tag git vX.Y.Z).
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.2.2"
 
 # Verification de mise a jour : le repo est PUBLIC, donc l'API GitHub Releases est lisible sans
 # aucune authentification (ni token embarque). On compare le dernier tag a APP_VERSION et, si plus
@@ -1470,9 +1470,26 @@ class RobloaderApp(ctk.CTk):
             self.update_lbl.configure(text="Installation lancée — Robloader va se fermer…")
             self.after(900, self.destroy)
         elif sys.platform == 'darwin':
-            subprocess.run(['open', path])  # monte le .dmg
-            self.update_lbl.configure(
-                text="DMG ouvert — glisse Robloader dans Applications pour terminer.", text_color=OK_GREEN)
+            # Monte le DMG, copie l'app dans /Applications, démonte — aucune action utilisateur.
+            import tempfile, shutil
+            mnt = tempfile.mkdtemp(prefix='RobloaderMnt_')
+            try:
+                subprocess.run(['hdiutil', 'attach', '-nobrowse', '-mountpoint', mnt, path], check=True)
+                apps = [f for f in os.listdir(mnt) if f.endswith('.app')]
+                if apps:
+                    src = os.path.join(mnt, apps[0])
+                    dst = f'/Applications/{apps[0]}'
+                    if os.path.exists(dst):
+                        shutil.rmtree(dst)
+                    shutil.copytree(src, dst)
+                subprocess.run(['hdiutil', 'detach', mnt], check=False)
+            except Exception:
+                subprocess.run(['open', path])
+                self.update_lbl.configure(
+                    text="DMG ouvert — glisse Robloader dans Applications pour terminer.", text_color=OK_GREEN)
+                return
+            self.update_lbl.configure(text="Mise à jour installée — Robloader va se fermer…", text_color=OK_GREEN)
+            self.after(900, self.destroy)
         else:
             webbrowser.open(RELEASES_PAGE_URL)
 
