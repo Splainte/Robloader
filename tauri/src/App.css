@@ -145,7 +145,7 @@
 /* ---------- Surface de controle commune (champ / select) ---------- */
 .field,
 .input--time,
-.select {
+.select__trigger {
   background: var(--rl-field);
   border: 1px solid var(--rl-stroke);
   border-radius: var(--rl-radius);
@@ -154,7 +154,7 @@
 }
 .field:hover,
 .input--time:hover,
-.select:hover {
+.select__trigger:hover {
   background: var(--rl-field-hover);
 }
 
@@ -190,7 +190,8 @@
   color: var(--rl-text-muted);
 }
 
-/* Champs temps (standalone) */
+/* Champs temps (standalone) : leger contour raccord avec le reste de l'UI.
+   On re-affirme la bordure ici car .input pose border:none plus haut. */
 .input--time {
   width: 76px;
   height: 32px;
@@ -200,6 +201,11 @@
   font: inherit;
   outline: none;
   user-select: text;
+  border: 1px solid var(--rl-stroke-strong);
+  border-radius: var(--rl-radius-sm);
+}
+.input--time::placeholder {
+  color: var(--rl-text-muted);
 }
 
 /* Chip de source detectee */
@@ -227,39 +233,133 @@
   box-shadow: inset 0 -2px 0 0 var(--rl-accent);
 }
 
-/* ---------- Select ---------- */
+/* ---------- Select custom (menu thematise clair/sombre) ----------
+   .select        = wrapper en position relative (ancre le menu)
+   .select__trigger = bouton visible (meme surface que .field)
+   .select__menu  = popover aligne PILE sous le trigger
+   Resout d'un coup : menu natif clair sous Windows + mauvais
+   alignement sous macOS. */
 .select {
   position: relative;
   display: inline-flex;
-  align-items: center;
   height: 38px;
-}
-.select__native {
-  appearance: none;
-  -webkit-appearance: none;
-  border: none;
-  background: transparent;
-  outline: none;
-  color: var(--rl-text);
-  font: inherit;
-  height: 100%;
-  padding: 0 30px 0 12px;
-  cursor: default;
-  max-width: 200px;
-}
-.select__native option {
-  color: #1c1c1e;
-}
-.select__chevron {
-  position: absolute;
-  right: 9px;
-  width: 15px;
-  height: 15px;
-  pointer-events: none;
-  color: var(--rl-text-muted);
 }
 .row--options .select {
   height: 32px;
+}
+
+.select__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 10px 0 12px;
+  border-radius: var(--rl-radius);
+  color: var(--rl-text);
+  font: inherit;
+  cursor: default;
+  max-width: 220px;
+}
+.select__value {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select__chevron {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  color: var(--rl-text-muted);
+  transition: transform 0.15s ease;
+}
+.select.is-open .select__chevron {
+  transform: rotate(180deg);
+}
+/* Etat ouvert : on garde la surface active + signature d'accent par OS. */
+.select.is-open .select__trigger {
+  background: var(--rl-field-hover);
+}
+.app[data-os="macos"] .select.is-open .select__trigger {
+  border-color: var(--rl-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rl-accent) 35%, transparent);
+}
+.app[data-os="windows"] .select.is-open .select__trigger {
+  box-shadow: inset 0 -2px 0 0 var(--rl-accent);
+}
+
+/* Le popover : fond quasi-opaque (lisible sur Mica/Vibrancy), thematise. */
+.select__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  z-index: 50;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--rl-menu-bg);
+  border: 1px solid var(--rl-menu-stroke);
+  box-shadow: var(--rl-menu-shadow);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  animation: select-pop 0.12s ease;
+}
+/* macOS : coins bien arrondis (NSMenu). Windows 11 : arrondi plus discret. */
+.app[data-os="macos"] .select__menu {
+  border-radius: 10px;
+}
+.app[data-os="windows"] .select__menu {
+  border-radius: 8px;
+}
+@keyframes select-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.select__option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px 0 6px;
+  border: none;
+  background: transparent;
+  color: var(--rl-text);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: default;
+  border-radius: 6px;
+  transition: background-color 0.1s ease;
+}
+.select__option:hover {
+  background: var(--rl-control-hover);
+}
+.app[data-os="windows"] .select__option {
+  border-radius: 4px;
+}
+.select__option-check {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: var(--rl-accent);
+  stroke-width: 2.4;
+  opacity: 0;
+}
+.select__option.is-selected .select__option-check {
+  opacity: 1;
+}
+.select__option-label {
+  flex: 1 1 auto;
 }
 
 /* ---------- Boutons ---------- */
@@ -445,4 +545,97 @@
 }
 .queue__empty span {
   font-size: 12px;
+}
+
+/* ---------- Cartes de tache (etats de chargement) ---------- */
+.queue__list {
+  display: flex;
+  flex-direction: column;
+}
+.task {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--rl-stroke);
+}
+.task:last-child {
+  border-bottom: none;
+}
+.task__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.task__title {
+  font-weight: 600;
+  color: var(--rl-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task__status {
+  font-size: 11.5px;
+  color: var(--rl-text-muted);
+}
+.task__status--warn {
+  color: var(--rl-warn);
+}
+.task__status--ok {
+  color: var(--rl-ok);
+}
+.task__status--err {
+  color: var(--rl-err);
+}
+
+/* Barre de progression. */
+.task__bar {
+  position: relative;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--rl-control-active);
+  overflow: hidden;
+}
+.task__bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: 999px;
+  background: var(--rl-accent);
+  transition: width 0.2s ease;
+}
+.task__bar.is-ok .task__bar-fill {
+  background: var(--rl-ok);
+}
+/* Indetermine : navette qui balaie la barre (analyse / etape sans pourcentage). */
+.task__bar.is-indeterminate .task__bar-fill {
+  width: 35%;
+  transition: none;
+  animation: bar-sweep 1.1s ease-in-out infinite;
+}
+@keyframes bar-sweep {
+  0% {
+    left: -35%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+.task__action {
+  flex: 0 0 auto;
+}
+
+/* Variante bouton "succes" (ouvrir le dossier). */
+.btn--ok {
+  background: var(--rl-ok);
+  color: #fff;
+}
+.btn--ok:hover {
+  background: var(--rl-ok-hover);
+}
+.btn--ok:active {
+  filter: brightness(0.94);
 }

@@ -22,6 +22,16 @@
   --rl-accent: #0a84ff;
   --rl-accent-hover: #0a7af0;
   --rl-accent-text: #ffffff;
+
+  /* Menu deroulant custom : fond quasi-opaque (lisible par-dessus Mica/Vibrancy) + ombre. */
+  --rl-menu-bg: rgba(250, 250, 252, 0.96);
+  --rl-menu-stroke: rgba(0, 0, 0, 0.1);
+  --rl-menu-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+
+  --rl-ok: #1a8a4a;
+  --rl-ok-hover: #1d9b53;
+  --rl-warn: #b35e00;
+  --rl-err: #c0392b;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -35,6 +45,15 @@
     --rl-control-active: rgba(255, 255, 255, 0.18);
     --rl-field: rgba(255, 255, 255, 0.06);
     --rl-field-hover: rgba(255, 255, 255, 0.1);
+
+    --rl-menu-bg: rgba(44, 44, 46, 0.97);
+    --rl-menu-stroke: rgba(255, 255, 255, 0.14);
+    --rl-menu-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+
+    --rl-ok: #2ecc71;
+    --rl-ok-hover: #34d27c;
+    --rl-warn: #e67e22;
+    --rl-err: #e74c3c;
   }
 }
 

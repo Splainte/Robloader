@@ -17,7 +17,9 @@ type IconName =
   | "check"
   | "chevron"
   | "broom"
-  | "tray";
+  | "tray"
+  | "x"
+  | "wrench";
 
 const PATHS: Record<IconName, ReactElement> = {
   link: (
@@ -60,6 +62,10 @@ const PATHS: Record<IconName, ReactElement> = {
       <path d="M4 13l2.5-7h11L20 13v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
       <path d="M4 13h4l1.5 2h5L16 13h4" />
     </>
+  ),
+  x: <path d="M6 6l12 12M18 6L6 18" />,
+  wrench: (
+    <path d="M14.7 6.3a4 4 0 0 0-5.2 5l-5.1 5.1a1.5 1.5 0 0 0 2.1 2.1l5.1-5.1a4 4 0 0 0 5-5.2l-2.4 2.4-2.1-.6-.6-2.1z" />
   ),
 };
 

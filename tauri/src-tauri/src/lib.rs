@@ -1,15 +1,11 @@
 use tauri::Manager;
 
+mod engine;
+
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
 #[cfg(target_os = "windows")]
 use window_vibrancy::apply_mica;
-
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
 
 // macOS : le contenu centre "saute" (ancre dans un coin) pendant resize/zoom.
 // Deux cas a couvrir sur chaque NSView, recursivement :
@@ -44,6 +40,8 @@ unsafe fn stabilize_content_on_resize(view: *mut objc2::runtime::AnyObject) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .manage(engine::Engine::default())
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
 
@@ -85,7 +83,15 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![
+            engine::get_env,
+            engine::set_download_dir,
+            engine::choose_destination,
+            engine::start_download,
+            engine::cancel_download,
+            engine::reveal_in_folder,
+            engine::open_cookie_help,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

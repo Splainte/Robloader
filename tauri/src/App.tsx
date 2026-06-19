@@ -1,5 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 import { Icon } from "./icons";
 
@@ -9,7 +11,7 @@ const appWindow = getCurrentWindow();
 const isMac = navigator.userAgent.includes("Macintosh");
 
 // ------------------------------------------------------------------
-// Donnees de l'UI (reprises de Robloader.py — purement visuel ici)
+// Donnees de l'UI (reprises de Robloader.py)
 // ------------------------------------------------------------------
 const QUALITY_LABELS = [
   "Qualité max (jusqu'à 4K)",
@@ -78,34 +80,113 @@ function detectProfile(url: string): Profile {
 }
 
 // ------------------------------------------------------------------
-// Petits composants reutilisables, stylises via .app[data-os]
+// Etats des taches (file de telechargements) + evenements backend
+// ------------------------------------------------------------------
+type StatusKind = "info" | "warn" | "ok" | "err";
+type ActionKind = "cancel" | "open" | "repair" | "none";
+
+type Task = {
+  id: number;
+  title: string;
+  status: string;
+  statusKind: StatusKind;
+  percent: number; // 0..1
+  indeterminate: boolean;
+  action: ActionKind;
+  finalPath?: string;
+};
+
+// Mise a jour partielle envoyee par le backend (event "task://update").
+type TaskUpdate = {
+  id: number;
+  title?: string;
+  status?: string;
+  statusKind?: StatusKind;
+  percent?: number;
+  indeterminate?: boolean;
+  action?: ActionKind;
+  finalPath?: string;
+  done?: boolean;
+};
+
+type EnvInfo = {
+  downloadDir: string;
+  cookiesOk: boolean;
+  cookiesSource: string;
+  jsRuntime: boolean;
+};
+
+// ------------------------------------------------------------------
+// Select custom : menu stylise (Windows 11 / macOS), thematise clair/sombre,
+// aligne PILE sous le bouton qui l'ouvre (corrige l'alignement macOS et le
+// menu natif qui restait clair sous Windows).
 // ------------------------------------------------------------------
 function Select({
   value,
   values,
   onChange,
   ariaLabel,
+  disabled,
 }: {
   value: string;
   values: string[];
   onChange: (v: string) => void;
   ariaLabel: string;
+  disabled?: boolean;
 }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   return (
-    <div className="select">
-      <select
-        className="select__native"
-        value={value}
+    <div className={`select${open ? " is-open" : ""}`} ref={ref}>
+      <button
+        type="button"
+        className="select__trigger"
         aria-label={ariaLabel}
-        onChange={(e) => onChange(e.target.value)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((o) => !o)}
       >
-        {values.map((v) => (
-          <option key={v} value={v}>
-            {v}
-          </option>
-        ))}
-      </select>
-      <Icon name="chevron" className="select__chevron" />
+        <span className="select__value">{value}</span>
+        <Icon name="chevron" className="select__chevron" />
+      </button>
+      {open && (
+        <div className="select__menu" role="listbox">
+          {values.map((v) => (
+            <button
+              type="button"
+              key={v}
+              role="option"
+              aria-selected={v === value}
+              className={`select__option${v === value ? " is-selected" : ""}`}
+              onClick={() => {
+                onChange(v);
+                setOpen(false);
+              }}
+            >
+              <Icon name="check" className="select__option-check" />
+              <span className="select__option-label">{v}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -134,6 +215,70 @@ function Check({
   );
 }
 
+// Carte d'une tache (titre + statut + barre + bouton d'action).
+function TaskCard({
+  task,
+  onCancel,
+  onOpen,
+  onRepair,
+}: {
+  task: Task;
+  onCancel: (id: number) => void;
+  onOpen: (path: string) => void;
+  onRepair: () => void;
+}) {
+  return (
+    <div className="task">
+      <div className="task__main">
+        <div className="task__title" title={task.title}>
+          {task.title}
+        </div>
+        <div className={`task__status task__status--${task.statusKind}`}>
+          {task.status}
+        </div>
+        <div
+          className={`task__bar${task.indeterminate ? " is-indeterminate" : ""}${
+            task.statusKind === "ok" ? " is-ok" : ""
+          }`}
+        >
+          <div
+            className="task__bar-fill"
+            style={
+              task.indeterminate
+                ? undefined
+                : { width: `${Math.round(task.percent * 100)}%` }
+            }
+          />
+        </div>
+      </div>
+
+      <div className="task__action">
+        {task.action === "cancel" && (
+          <button className="btn btn--secondary btn--sm" onClick={() => onCancel(task.id)}>
+            <Icon name="x" className="btn__icon" />
+            <span>Annuler</span>
+          </button>
+        )}
+        {task.action === "open" && (
+          <button
+            className="btn btn--sm btn--ok"
+            onClick={() => task.finalPath && onOpen(task.finalPath)}
+          >
+            <Icon name="folder-open" className="btn__icon" />
+            <span>Ouvrir le dossier</span>
+          </button>
+        )}
+        {task.action === "repair" && (
+          <button className="btn btn--accent btn--sm" onClick={onRepair}>
+            <Icon name="wrench" className="btn__icon" />
+            <span>Réparer</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [url, setUrl] = useState("");
   const [quality, setQuality] = useState(QUALITY_LABELS[0]);
@@ -144,14 +289,117 @@ function App() {
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
 
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [env, setEnv] = useState<EnvInfo | null>(null);
+  const idCounter = useRef(0);
+
   const profile = useMemo(() => detectProfile(url), [url]);
   const outputs = transcode ? OUTPUTS_TRANSCODE : OUTPUTS_NATIVE;
+
+  // Infos d'environnement (dossier, cookies, runtime JS) pour la ligne d'etat.
+  useEffect(() => {
+    invoke<EnvInfo>("get_env").then(setEnv).catch(() => {});
+  }, []);
+
+  // Ecoute des mises a jour de taches emises par le backend.
+  useEffect(() => {
+    const un = listen<TaskUpdate>("task://update", (e) => {
+      const u = e.payload;
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === u.id
+            ? {
+                ...t,
+                ...(u.title !== undefined ? { title: u.title } : {}),
+                ...(u.status !== undefined ? { status: u.status } : {}),
+                ...(u.statusKind !== undefined ? { statusKind: u.statusKind } : {}),
+                ...(u.percent !== undefined ? { percent: u.percent } : {}),
+                ...(u.indeterminate !== undefined ? { indeterminate: u.indeterminate } : {}),
+                ...(u.action !== undefined ? { action: u.action } : {}),
+                ...(u.finalPath !== undefined ? { finalPath: u.finalPath } : {}),
+              }
+            : t
+        )
+      );
+    });
+    return () => {
+      un.then((f) => f());
+    };
+  }, []);
 
   // Si on bascule le transcodage et que le format courant n'existe plus, on retombe sur le 1er.
   function toggleTranscode(v: boolean) {
     setTranscode(v);
     const list = v ? OUTPUTS_TRANSCODE : OUTPUTS_NATIVE;
     if (!list.includes(output)) setOutput(list[0]);
+  }
+
+  function startDownload() {
+    const raw = url.trim();
+    if (!raw) return;
+
+    // Batch : plusieurs URLs separees par des espaces / retours a la ligne.
+    const urls = raw.split(/\s+/).filter((u) => u.startsWith("http"));
+    const list = urls.length ? urls : [raw];
+
+    const newTasks: Task[] = [];
+    for (const u of list) {
+      idCounter.current += 1;
+      const id = idCounter.current;
+      newTasks.push({
+        id,
+        title: "Analyse du lien…",
+        status: "En attente…",
+        statusKind: "info",
+        percent: 0,
+        indeterminate: true,
+        action: "cancel",
+      });
+      invoke("start_download", {
+        opts: {
+          id,
+          url: u,
+          start,
+          end,
+          qualityLabel: quality,
+          output,
+          subs: profile.subtitles ? subs : false,
+          thumb: profile.thumbnail ? thumb : false,
+          transcode,
+          downloadDir: env?.downloadDir ?? null,
+        },
+      }).catch((err) => {
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.id === id
+              ? { ...t, status: `Échec : ${err}`, statusKind: "err", action: "none", indeterminate: false }
+              : t
+          )
+        );
+      });
+    }
+    setTasks((prev) => [...newTasks.reverse(), ...prev]);
+
+    setUrl("");
+    setStart("");
+    setEnd("");
+  }
+
+  function cancelTask(id: number) {
+    invoke("cancel_download", { id }).catch(() => {});
+  }
+  function openFolder(path: string) {
+    invoke("reveal_in_folder", { path }).catch(() => {});
+  }
+  function repair() {
+    invoke("open_cookie_help").catch(() => {});
+  }
+  function clearList() {
+    setTasks((prev) => prev.filter((t) => t.action === "cancel"));
+  }
+  async function chooseDestination() {
+    const dir = await invoke<string | null>("choose_destination").catch(() => null);
+    if (dir && env) setEnv({ ...env, downloadDir: dir });
   }
 
   return (
@@ -195,6 +443,7 @@ function App() {
               value={url}
               placeholder={profile.placeholder}
               onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && startDownload()}
               spellCheck={false}
             />
             {profile.id !== "default" && (
@@ -206,12 +455,12 @@ function App() {
             <Select value={quality} values={QUALITY_LABELS} onChange={setQuality} ariaLabel="Qualité" />
           )}
 
-          <button className="btn btn--secondary">
+          <button className="btn btn--secondary" onClick={chooseDestination}>
             <Icon name="folder" className="btn__icon" />
             <span>Destination</span>
           </button>
 
-          <button className="btn btn--accent">
+          <button className="btn btn--accent" onClick={startDownload}>
             <Icon name="download" className="btn__icon" />
             <span>Télécharger</span>
           </button>
@@ -258,26 +507,54 @@ function App() {
         {/* ---- Ligne d'etat ---- */}
         <div className="status-line">
           <Icon name="folder-open" className="status-line__icon" />
-          <span>~/Téléchargements</span>
-          <span className="status-line__dot">·</span>
-          <span>cookies ✓</span>
+          <span>{env?.downloadDir ?? "…"}</span>
+          {env && (
+            <>
+              <span className="status-line__dot">·</span>
+              <span>
+                {env.cookiesOk
+                  ? `cookies ${env.cookiesSource} ✓`
+                  : "cookies absents"}
+              </span>
+              {!env.jsRuntime && (
+                <>
+                  <span className="status-line__dot">·</span>
+                  <span>4K limitée (Deno absent)</span>
+                </>
+              )}
+            </>
+          )}
         </div>
 
         {/* ---- File de telechargements ---- */}
         <div className="queue-head">
           <h2 className="queue-head__title">File de téléchargements</h2>
-          <button className="btn btn--secondary btn--sm">
+          <button className="btn btn--secondary btn--sm" onClick={clearList}>
             <Icon name="broom" className="btn__icon" />
             <span>Nettoyer la liste</span>
           </button>
         </div>
 
         <div className="queue">
-          <div className="queue__empty">
-            <Icon name="tray" className="queue__empty-icon" />
-            <p>Aucun téléchargement pour l’instant.</p>
-            <span>Colle un lien ci-dessus pour commencer.</span>
-          </div>
+          {tasks.length === 0 ? (
+            <div className="queue__empty">
+              <Icon name="tray" className="queue__empty-icon" />
+              <p>Aucun téléchargement pour l’instant.</p>
+              <span>Colle un lien ci-dessus pour commencer.</span>
+            </div>
+          ) : (
+            <div className="queue__list">
+              {tasks.map((t) => (
+                <TaskCard
+                  key={t.id}
+                  task={t}
+                  onCancel={cancelTask}
+                  onOpen={openFolder}
+                  onRepair={repair}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </main>
     </div>
