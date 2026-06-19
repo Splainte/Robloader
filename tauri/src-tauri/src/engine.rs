@@ -1198,7 +1198,7 @@ fn run_pipeline_inner(
                     )
                 } else {
                     (
-                        "Conversion H.265 (Premiere Pro)…",
+                        "Conversion H.265…",
                         if is_mac {
                             vec!["-c:v", "hevc_videotoolbox", "-q:v", "65", "-tag:v", "hvc1"]
                         } else {
@@ -1280,7 +1280,7 @@ fn run_pipeline_inner(
     } else if native_video {
         format!("Terminé ✓ Vidéo native (.{})", ext_lower(&final_path))
     } else {
-        "Terminé ✓ Prêt pour Premiere Pro".to_string()
+        "Terminé ✓".to_string()
     };
     let _ = dir_str; // (garde la coherence avec la version Python)
     emit(
