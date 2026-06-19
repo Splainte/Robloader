@@ -24,13 +24,11 @@ const QUALITY_LABELS = [
 const OUTPUTS_TRANSCODE = [
   "HEVC",
   "ProRes",
-  "Audio MP3",
   "Audio WAV",
   "Sous-titres seuls (.srt)",
 ];
 const OUTPUTS_NATIVE = [
   "Vidéo (natif)",
-  "Audio MP3",
   "Audio WAV",
   "Sous-titres seuls (.srt)",
 ];

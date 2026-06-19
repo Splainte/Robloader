@@ -137,7 +137,6 @@ pub struct DownloadOpts {
 const OUT_HEVC: &str = "HEVC";
 const OUT_PRORES: &str = "ProRes";
 const OUT_VIDEO_NATIVE: &str = "Vidéo (natif)";
-const OUT_MP3: &str = "Audio MP3";
 const OUT_WAV: &str = "Audio WAV";
 const OUT_SUBS: &str = "Sous-titres seuls (.srt)";
 
@@ -826,12 +825,12 @@ fn run_pipeline_inner(
     let remote = js_runtime && yt;
 
     let out = opts.output.as_str();
-    let audio_mode = out == OUT_MP3 || out == OUT_WAV;
+    let audio_mode = out == OUT_WAV;
     let want_prores = out == OUT_PRORES;
     let subs_only = out == OUT_SUBS;
     let native_video = out == OUT_VIDEO_NATIVE
         || (!opts.transcode && !audio_mode && !subs_only && !want_prores && out != OUT_HEVC);
-    let audio_codec = if out == OUT_MP3 { "mp3" } else { "wav" };
+    let audio_codec = "wav";
 
     // ---- Analyse (extract info) ----
     emit(
@@ -1025,11 +1024,7 @@ fn run_pipeline_inner(
         args.push(src.to_string_lossy().to_string());
         args.extend(dur.clone());
         args.push("-vn".into());
-        if audio_codec == "mp3" {
-            args.extend(["-c:a", "libmp3lame", "-q:a", "2"].map(String::from));
-        } else {
-            args.extend(["-c:a", "pcm_s16le"].map(String::from));
-        }
+        args.extend(["-c:a", "pcm_s16le"].map(String::from));
         args.push(final_path.to_string_lossy().to_string());
         let rc = run_ffmpeg(handle, app, id, &bins.ffmpeg, &args, segment_duration, "Conversion audio…")
             .map_err(|e| e.to_string())?;
