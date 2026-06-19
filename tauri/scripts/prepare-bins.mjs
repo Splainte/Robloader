@@ -10,7 +10,8 @@ import { execSync } from "child_process";
 import { copyFileSync, chmodSync, mkdirSync, existsSync } from "fs";
 import { createWriteStream } from "fs";
 import { join, dirname } from "path";
-import { fileURLToPath, createRequire } from "url";
+import { fileURLToPath } from "url";
+import { createRequire } from "module";
 import https from "https";
 
 const require = createRequire(import.meta.url);
