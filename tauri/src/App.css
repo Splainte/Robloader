@@ -12,8 +12,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 7px 16px;
-  background: color-mix(in srgb, AccentColor 15%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, AccentColor 30%, transparent);
+  background: color-mix(in srgb, var(--rl-accent) 15%, transparent);
   font-size: 12px;
   color: var(--rl-text);
 }

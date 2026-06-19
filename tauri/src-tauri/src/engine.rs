@@ -1586,7 +1586,6 @@ pub fn cancel_download(state: State<Engine>, id: u64) {
 
 #[tauri::command]
 pub fn reveal_in_folder(path: String) {
-    let p = Path::new(&path);
     #[cfg(windows)]
     {
         let mut cmd = Command::new("explorer");
@@ -1600,6 +1599,7 @@ pub fn reveal_in_folder(path: String) {
     }
     #[cfg(not(any(windows, target_os = "macos")))]
     {
+        let p = Path::new(&path);
         let dir = p.parent().unwrap_or(p);
         let _ = Command::new("xdg-open").arg(dir).spawn();
     }

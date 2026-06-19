@@ -112,4 +112,5 @@ if (existsSync(denoDest)) {
   console.log(`✓ → ${denoDest}`);
 }
 
-console.log("\nTous les binaires sont prêts. Lance npm run tauri build.");
+console.log("\nTous les binaires sont prêts.");
+process.exit(0);
