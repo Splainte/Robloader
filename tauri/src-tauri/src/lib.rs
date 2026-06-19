@@ -81,12 +81,10 @@ pub fn run() {
                     .expect("Mica : uniquement supporte sur Windows 11");
             }
 
-            engine::start_accent_watcher(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             engine::get_env,
-            engine::get_accent_color,
             engine::set_download_dir,
             engine::choose_destination,
             engine::start_download,

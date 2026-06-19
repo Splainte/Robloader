@@ -114,14 +114,6 @@ type EnvInfo = {
   jsRuntime: boolean;
 };
 
-type AccentPair = { accent: string; accentHover: string };
-
-function applyAccent({ accent, accentHover }: AccentPair) {
-  const root = document.documentElement;
-  root.style.setProperty("--rl-accent", accent);
-  root.style.setProperty("--rl-accent-hover", accentHover);
-}
-
 // ------------------------------------------------------------------
 // Select custom : menu stylise (Windows 11 / macOS), thematise clair/sombre,
 // aligne PILE sous le bouton qui l'ouvre (corrige l'alignement macOS et le
@@ -301,13 +293,6 @@ function App() {
 
   const profile = useMemo(() => detectProfile(url), [url]);
   const outputs = transcode ? OUTPUTS_TRANSCODE : OUTPUTS_NATIVE;
-
-  // Couleur d'accent native : lecture initiale + ecoute des changements.
-  useEffect(() => {
-    invoke<AccentPair>("get_accent_color").then(applyAccent).catch(() => {});
-    const un = listen<AccentPair>("theme://accent", (e) => applyAccent(e.payload));
-    return () => { un.then((f) => f()); };
-  }, []);
 
   // Infos d'environnement (dossier, cookies, runtime JS) pour la ligne d'etat.
   useEffect(() => {

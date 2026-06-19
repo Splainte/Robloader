@@ -408,10 +408,10 @@
   color: var(--rl-accent-text);
 }
 .btn--accent:hover {
-  background: var(--rl-accent-hover);
+  filter: brightness(0.88);
 }
 .btn--accent:active {
-  filter: brightness(0.94);
+  filter: brightness(0.82);
 }
 
 /* Hover signature : macOS = leger enfoncement ; Windows 11 = "lift" subtil. */
