@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "prepare-bins": "node scripts/prepare-bins.mjs"
   },
   "dependencies": {
     "react": "^19.1.0",
@@ -21,6 +22,8 @@
     "@vitejs/plugin-react": "^4.6.0",
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
-    "@tauri-apps/cli": "^2"
+    "@tauri-apps/cli": "^2",
+    "ffmpeg-static": "^5.2.0",
+    "@ffprobe-installer/ffprobe": "^1.4.1"
   }
 }

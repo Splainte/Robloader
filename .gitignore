@@ -10,3 +10,6 @@ build/
 dist/
 *.app/
 installer/Output/
+
+# Binaires embarqués (générés par npm run prepare-bins, jamais committer)
+tauri/src-tauri/binaries/
