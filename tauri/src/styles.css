@@ -57,11 +57,8 @@
   }
 }
 
-/* Accent natif par OS (macOS bleu systeme / Windows 11 bleu Fluent). */
-.app[data-os="windows"] {
-  --rl-accent: #0067c0;
-  --rl-accent-hover: #1a75c8;
-}
+/* --rl-accent / --rl-accent-hover injectes dynamiquement par le backend
+   (couleur d'accent systeme, macOS + Windows). Les valeurs :root servent de repli. */
 
 * {
   box-sizing: border-box;
