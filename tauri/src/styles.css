@@ -1,0 +1,101 @@
+/* ============================================================
+   Reset global + transparence native
+   Le fond doit etre TOTALEMENT transparent pour laisser
+   transparaitre le materiau natif de l'OS :
+     - Mica       sur Windows 11
+     - Vibrancy   sur macOS (NSVisualEffectView)
+   Aucune fausse transparence CSS ici : on ne peint RIEN derriere.
+   ============================================================ */
+
+:root {
+  color-scheme: light dark; /* le texte/scrollbars suivent le theme systeme */
+
+  --rl-text: #1c1c1e;
+  --rl-text-muted: rgba(28, 28, 30, 0.55);
+  --rl-stroke: rgba(0, 0, 0, 0.12);
+  --rl-stroke-strong: rgba(0, 0, 0, 0.28);
+  --rl-control: rgba(0, 0, 0, 0.04);
+  --rl-control-hover: rgba(0, 0, 0, 0.08);
+  --rl-control-active: rgba(0, 0, 0, 0.12);
+  --rl-field: rgba(255, 255, 255, 0.7);
+  --rl-field-hover: rgba(255, 255, 255, 0.85);
+  --rl-accent: AccentColor; /* mot-cle CSS systeme : exact + dynamique (WKWebView + WebView2) */
+  --rl-accent-text: #ffffff;
+
+  /* Menu deroulant custom : fond quasi-opaque (lisible par-dessus Mica/Vibrancy) + ombre. */
+  --rl-menu-bg: rgba(250, 250, 252, 0.96);
+  --rl-menu-stroke: rgba(0, 0, 0, 0.1);
+  --rl-menu-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+
+  --rl-ok: #1a8a4a;
+  --rl-ok-hover: #1d9b53;
+  --rl-warn: #b35e00;
+  --rl-err: #c0392b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --rl-text: #f5f5f7;
+    --rl-text-muted: rgba(245, 245, 247, 0.55);
+    --rl-stroke: rgba(255, 255, 255, 0.12);
+    --rl-stroke-strong: rgba(255, 255, 255, 0.4);
+    --rl-control: rgba(255, 255, 255, 0.06);
+    --rl-control-hover: rgba(255, 255, 255, 0.12);
+    --rl-control-active: rgba(255, 255, 255, 0.18);
+    --rl-field: rgba(255, 255, 255, 0.06);
+    --rl-field-hover: rgba(255, 255, 255, 0.1);
+
+    --rl-menu-bg: rgba(44, 44, 46, 0.97);
+    --rl-menu-stroke: rgba(255, 255, 255, 0.14);
+    --rl-menu-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+
+    --rl-ok: #2ecc71;
+    --rl-ok-hover: #34d27c;
+    --rl-warn: #e67e22;
+    --rl-err: #e74c3c;
+  }
+}
+
+/* --rl-accent / --rl-accent-hover injectes dynamiquement par le backend
+   (couleur d'accent systeme, macOS + Windows). Les valeurs :root servent de repli. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  /* LA cle : fond 100% transparent => le materiau natif est visible */
+  background-color: rgba(0, 0, 0, 0);
+}
+
+#root {
+  background-color: transparent;
+}
+
+body {
+  color: var(--rl-text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* anti rebond/scroll de la webview qui laisserait voir un fond opaque */
+  overflow: hidden;
+  user-select: none;
+}
+
+/* Police pilotee par l'OS detecte (cf. App.tsx data-os). */
+.app[data-os="macos"] {
+  font-family: "SF Pro Text", "SF Pro Display", -apple-system,
+    BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+}
+.app[data-os="windows"] {
+  font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI",
+    system-ui, sans-serif;
+}

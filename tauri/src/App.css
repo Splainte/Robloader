@@ -1,0 +1,653 @@
+/* ============================================================
+   UI Robloader (V2 — Tauri)
+   Tout est transparent : on pose texte + controles par-dessus le
+   materiau natif (Mica sur Windows 11, Vibrancy sur macOS).
+   L'aspect des controles s'adapte a l'OS via .app[data-os].
+   ============================================================ */
+
+/* Banniere de mise a jour : fine bande entre la titlebar et le contenu. */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 16px;
+  background: color-mix(in srgb, var(--rl-accent) 15%, transparent);
+  font-size: 12px;
+  color: var(--rl-text);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: transparent;
+  font-size: 13px;
+}
+
+/* Rayon des controles : macOS un peu plus arrondi, Windows 11 plus carre. */
+.app[data-os="macos"] {
+  --rl-radius: 7px;
+  --rl-radius-sm: 6px;
+}
+.app[data-os="windows"] {
+  --rl-radius: 5px;
+  --rl-radius-sm: 4px;
+}
+
+/* ---------- Titlebar custom (frameless) ---------- */
+.titlebar {
+  flex: 0 0 auto;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.app[data-os="windows"] .titlebar {
+  padding-left: 16px;
+}
+.app[data-os="macos"] .titlebar {
+  height: 38px;
+  padding-left: 80px;
+}
+
+.titlebar__title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--rl-text-muted);
+}
+
+.titlebar__controls {
+  display: flex;
+  height: 100%;
+}
+
+.winbtn {
+  width: 46px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--rl-text);
+  cursor: default;
+  transition: background-color 0.12s ease;
+}
+.winbtn:hover {
+  background-color: var(--rl-control-hover);
+}
+.winbtn--close:hover {
+  background-color: #e81123;
+  color: #fff;
+}
+.winbtn svg {
+  display: block;
+  shape-rendering: crispEdges;
+}
+
+/* ---------- Icones (un seul SVG ; l'aspect change par OS) ---------- */
+.icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  stroke-width: 1.9;
+}
+/* SF Symbols : traits arrondis, un peu plus epais. */
+.app[data-os="macos"] .icon {
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Fluent : traits plus fins, jonctions nettes. */
+.app[data-os="windows"] .icon {
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- Contenu / formulaire ---------- */
+.content {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 4px 24px 20px;
+  gap: 10px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.row--main {
+  gap: 8px;
+  padding-top: 4px;
+}
+.row--clip,
+.row--options {
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.row__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  color: var(--rl-text);
+  white-space: nowrap;
+}
+.row__label-icon {
+  width: 15px;
+  height: 15px;
+  color: var(--rl-text-muted);
+}
+.mini-label {
+  color: var(--rl-text-muted);
+  white-space: nowrap;
+}
+.hint {
+  color: var(--rl-text-muted);
+  font-size: 11.5px;
+}
+
+/* ---------- Surface de controle commune (champ / select) ---------- */
+.field,
+.input--time,
+.select__trigger {
+  background: var(--rl-field);
+  border: 1px solid var(--rl-stroke);
+  border-radius: var(--rl-radius);
+  transition: border-color 0.14s ease, box-shadow 0.14s ease,
+    background-color 0.14s ease;
+}
+.field:hover,
+.input--time:hover,
+.select__trigger:hover {
+  background: var(--rl-field-hover);
+}
+
+/* Champ URL : icone + input + chip source */
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px;
+}
+.field--url {
+  flex: 1 1 auto;
+  min-width: 180px;
+}
+.field__icon {
+  width: 16px;
+  height: 16px;
+  color: var(--rl-text-muted);
+}
+
+.input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--rl-text);
+  font: inherit;
+  user-select: text;
+}
+.input::placeholder {
+  color: var(--rl-text-muted);
+}
+
+/* Champs temps (standalone) : leger contour raccord avec le reste de l'UI.
+   On re-affirme la bordure ici car .input pose border:none plus haut. */
+.input--time {
+  width: 76px;
+  height: 32px;
+  padding: 0 10px;
+  text-align: center;
+  color: var(--rl-text);
+  font: inherit;
+  outline: none;
+  user-select: text;
+  border: 1px solid var(--rl-stroke-strong);
+  border-radius: var(--rl-radius-sm);
+}
+.input--time::placeholder {
+  color: var(--rl-text-muted);
+}
+
+/* Chip de source detectee */
+.source-chip {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--rl-accent);
+  background: color-mix(in srgb, var(--rl-accent) 14%, transparent);
+}
+
+/* ---------- Focus : signature visuelle par OS ---------- */
+/* macOS : anneau d'accent lumineux tout autour. */
+.app[data-os="macos"] .field:focus-within,
+.app[data-os="macos"] .input--time:focus {
+  border-color: var(--rl-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rl-accent) 35%, transparent);
+}
+/* Windows 11 : la bordure du bas s'epaissit en accent (Fluent TextBox). */
+.app[data-os="windows"] .field:focus-within,
+.app[data-os="windows"] .input--time:focus {
+  border-color: var(--rl-stroke);
+  box-shadow: inset 0 -2px 0 0 var(--rl-accent);
+}
+
+/* ---------- Select custom (menu thematise clair/sombre) ----------
+   .select        = wrapper en position relative (ancre le menu)
+   .select__trigger = bouton visible (meme surface que .field)
+   .select__menu  = popover aligne PILE sous le trigger
+   Resout d'un coup : menu natif clair sous Windows + mauvais
+   alignement sous macOS. */
+.select {
+  position: relative;
+  display: inline-flex;
+  height: 38px;
+}
+.row--options .select {
+  height: 32px;
+}
+
+.select__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 10px 0 12px;
+  border-radius: var(--rl-radius);
+  color: var(--rl-text);
+  font: inherit;
+  cursor: default;
+  max-width: 220px;
+}
+.select__value {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select__chevron {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  color: var(--rl-text-muted);
+  transition: transform 0.15s ease;
+}
+.select.is-open .select__chevron {
+  transform: rotate(180deg);
+}
+/* Etat ouvert : on garde la surface active + signature d'accent par OS. */
+.select.is-open .select__trigger {
+  background: var(--rl-field-hover);
+}
+.app[data-os="macos"] .select.is-open .select__trigger {
+  border-color: var(--rl-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rl-accent) 35%, transparent);
+}
+.app[data-os="windows"] .select.is-open .select__trigger {
+  box-shadow: inset 0 -2px 0 0 var(--rl-accent);
+}
+
+/* Le popover : fond quasi-opaque (lisible sur Mica/Vibrancy), thematise. */
+.select__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  z-index: 50;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--rl-menu-bg);
+  border: 1px solid var(--rl-menu-stroke);
+  box-shadow: var(--rl-menu-shadow);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  animation: select-pop 0.12s ease;
+}
+/* macOS : coins bien arrondis (NSMenu). Windows 11 : arrondi plus discret. */
+.app[data-os="macos"] .select__menu {
+  border-radius: 10px;
+}
+.app[data-os="windows"] .select__menu {
+  border-radius: 8px;
+}
+@keyframes select-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.select__option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px 0 6px;
+  border: none;
+  background: transparent;
+  color: var(--rl-text);
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: default;
+  border-radius: 6px;
+  transition: background-color 0.1s ease;
+}
+.select__option:hover {
+  background: var(--rl-control-hover);
+}
+.app[data-os="windows"] .select__option {
+  border-radius: 4px;
+}
+.select__option-check {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  color: var(--rl-accent);
+  stroke-width: 2.4;
+  opacity: 0;
+}
+.select__option.is-selected .select__option-check {
+  opacity: 1;
+}
+.select__option-label {
+  flex: 1 1 auto;
+}
+
+/* ---------- Boutons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--rl-radius);
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: default;
+  transition: background-color 0.14s ease, border-color 0.14s ease,
+    transform 0.06s ease, box-shadow 0.14s ease;
+}
+.btn--sm {
+  height: 30px;
+  padding: 0 12px;
+  font-weight: 500;
+}
+.btn__icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* Secondaire */
+.btn--secondary {
+  background: var(--rl-field);
+  border-color: var(--rl-stroke);
+  color: var(--rl-text);
+}
+.btn--secondary:hover {
+  background: var(--rl-field-hover);
+}
+.btn--secondary:active {
+  background: var(--rl-control-active);
+}
+
+/* Accent */
+.btn--accent {
+  background: var(--rl-accent);
+  color: var(--rl-accent-text);
+}
+.btn--accent:hover {
+  filter: brightness(0.88);
+}
+.btn--accent:active {
+  filter: brightness(0.82);
+}
+
+/* Hover signature : macOS = leger enfoncement ; Windows 11 = "lift" subtil. */
+.app[data-os="macos"] .btn:active {
+  transform: scale(0.97);
+}
+.app[data-os="windows"] .btn--accent:hover {
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--rl-accent) 45%, transparent);
+}
+.app[data-os="windows"] .btn:active {
+  transform: translateY(0.5px);
+  filter: brightness(0.96);
+}
+
+/* ---------- Cases a cocher ---------- */
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: default;
+  white-space: nowrap;
+}
+.check input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.check__box {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--rl-stroke-strong);
+  background: var(--rl-field);
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+.app[data-os="macos"] .check__box {
+  border-radius: 5px;
+}
+.app[data-os="windows"] .check__box {
+  border-radius: 3px;
+}
+.check:hover .check__box {
+  border-color: var(--rl-text-muted);
+}
+.check__mark {
+  width: 14px;
+  height: 14px;
+  color: var(--rl-accent-text);
+  stroke-width: 2.4;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.check input:checked + .check__box {
+  background: var(--rl-accent);
+  border-color: var(--rl-accent);
+}
+.check input:checked + .check__box .check__mark {
+  opacity: 1;
+  transform: scale(1);
+}
+.check input:focus-visible + .check__box {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rl-accent) 35%, transparent);
+}
+.check__label {
+  color: var(--rl-text);
+}
+
+/* ---------- Ligne d'etat ---------- */
+.status-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--rl-text-muted);
+}
+.status-line__icon {
+  width: 14px;
+  height: 14px;
+}
+.status-line__dot {
+  opacity: 0.6;
+}
+
+/* ---------- File de telechargements ---------- */
+.queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+.queue-head__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.queue {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--rl-stroke);
+  border-radius: var(--rl-radius);
+  background: color-mix(in srgb, var(--rl-field) 50%, transparent);
+}
+
+.queue__empty {
+  height: 100%;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  color: var(--rl-text-muted);
+  padding: 24px;
+}
+.queue__empty-icon {
+  width: 34px;
+  height: 34px;
+  opacity: 0.6;
+  margin-bottom: 4px;
+}
+.queue__empty p {
+  margin: 0;
+  font-weight: 600;
+  color: var(--rl-text);
+}
+.queue__empty span {
+  font-size: 12px;
+}
+
+/* ---------- Cartes de tache (etats de chargement) ---------- */
+.queue__list {
+  display: flex;
+  flex-direction: column;
+}
+.task {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--rl-stroke);
+}
+.task:last-child {
+  border-bottom: none;
+}
+.task__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.task__title {
+  font-weight: 600;
+  color: var(--rl-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task__status {
+  font-size: 11.5px;
+  color: var(--rl-text-muted);
+}
+.task__status--warn {
+  color: var(--rl-warn);
+}
+.task__status--ok {
+  color: var(--rl-ok);
+}
+.task__status--err {
+  color: var(--rl-err);
+}
+
+/* Barre de progression. */
+.task__bar {
+  position: relative;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--rl-control-active);
+  overflow: hidden;
+}
+.task__bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: 999px;
+  background: var(--rl-accent);
+  transition: width 0.2s ease;
+}
+.task__bar.is-ok .task__bar-fill {
+  background: var(--rl-ok);
+}
+/* Indetermine : navette qui balaie la barre (analyse / etape sans pourcentage). */
+.task__bar.is-indeterminate .task__bar-fill {
+  width: 35%;
+  transition: none;
+  animation: bar-sweep 1.1s ease-in-out infinite;
+}
+@keyframes bar-sweep {
+  0% {
+    left: -35%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+.task__action {
+  flex: 0 0 auto;
+}
+
+/* Variante bouton "succes" (ouvrir le dossier). */
+.btn--ok {
+  background: var(--rl-ok);
+  color: #fff;
+}
+.btn--ok:hover {
+  background: var(--rl-ok-hover);
+}
+.btn--ok:active {
+  filter: brightness(0.94);
+}
