@@ -28,6 +28,14 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "PUBKEY_PLACEHOLDER",
+      "endpoints": [
+        "https://github.com/Splainte/Robloader/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

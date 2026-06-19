@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
 import { Icon } from "./icons";
 
@@ -289,6 +291,8 @@ function App() {
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [env, setEnv] = useState<EnvInfo | null>(null);
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  const [updateInstalling, setUpdateInstalling] = useState(false);
   const idCounter = useRef(0);
 
   const profile = useMemo(() => detectProfile(url), [url]);
@@ -297,6 +301,11 @@ function App() {
   // Infos d'environnement (dossier, cookies, runtime JS) pour la ligne d'etat.
   useEffect(() => {
     invoke<EnvInfo>("get_env").then(setEnv).catch(() => {});
+  }, []);
+
+  // Verif mise a jour unique au lancement — pas de polling.
+  useEffect(() => {
+    check().then((u) => { if (u?.available) setUpdateVersion(u.version); }).catch(() => {});
   }, []);
 
   // Ecoute des mises a jour de taches emises par le backend.
@@ -429,6 +438,30 @@ function App() {
           </div>
         )}
       </header>
+
+      {updateVersion && (
+        <div className="update-banner">
+          <span>Mise à jour disponible — v{updateVersion}</span>
+          <button
+            className="btn btn--accent btn--sm"
+            disabled={updateInstalling}
+            onClick={async () => {
+              setUpdateInstalling(true);
+              try {
+                const u = await check();
+                if (u?.available) {
+                  await u.downloadAndInstall();
+                  await relaunch();
+                }
+              } catch {
+                setUpdateInstalling(false);
+              }
+            }}
+          >
+            {updateInstalling ? "Installation…" : "Installer et relancer"}
+          </button>
+        </div>
+      )}
 
       <main className="content">
         {/* ---- Ligne 1 : URL + qualite + destination + telecharger ---- */}

@@ -5,6 +5,19 @@
    L'aspect des controles s'adapte a l'OS via .app[data-os].
    ============================================================ */
 
+/* Banniere de mise a jour : fine bande entre la titlebar et le contenu. */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 16px;
+  background: color-mix(in srgb, AccentColor 15%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, AccentColor 30%, transparent);
+  font-size: 12px;
+  color: var(--rl-text);
+}
+
 .app {
   display: flex;
   flex-direction: column;
