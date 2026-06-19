@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { check } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
 import { Icon } from "./icons";
 
@@ -291,7 +289,8 @@ function App() {
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [env, setEnv] = useState<EnvInfo | null>(null);
-  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  type UpdateInfo = { version: string; url: string };
+  const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null);
   const [updateInstalling, setUpdateInstalling] = useState(false);
   const idCounter = useRef(0);
 
@@ -305,7 +304,7 @@ function App() {
 
   // Verif mise a jour unique au lancement — pas de polling.
   useEffect(() => {
-    check().then((u) => { if (u?.available) setUpdateVersion(u.version); }).catch(() => {});
+    invoke<UpdateInfo | null>("check_update").then((u) => { if (u) setAvailableUpdate(u); }).catch(() => {});
   }, []);
 
   // Ecoute des mises a jour de taches emises par le backend.
@@ -439,26 +438,22 @@ function App() {
         )}
       </header>
 
-      {updateVersion && (
+      {availableUpdate && (
         <div className="update-banner">
-          <span>Mise à jour disponible — v{updateVersion}</span>
+          <span>Mise à jour disponible — v{availableUpdate.version}</span>
           <button
             className="btn btn--accent btn--sm"
             disabled={updateInstalling}
             onClick={async () => {
               setUpdateInstalling(true);
               try {
-                const u = await check();
-                if (u?.available) {
-                  await u.downloadAndInstall();
-                  await relaunch();
-                }
+                await invoke("install_update", { url: availableUpdate.url });
               } catch {
                 setUpdateInstalling(false);
               }
             }}
           >
-            {updateInstalling ? "Installation…" : "Installer et relancer"}
+            {updateInstalling ? "Téléchargement…" : "Installer et relancer"}
           </button>
         </div>
       )}

@@ -1296,6 +1296,137 @@ fn run_pipeline_inner(
 }
 
 // ============================================================
+//  Auto-update (Option B : GitHub Releases API, même logique que V1)
+// ============================================================
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfo {
+    pub version: String,
+    pub url: String,
+}
+
+// Selectionne l'asset approprié selon la plateforme/archi.
+fn pick_asset(json: &serde_json::Value, tag: &str) -> Option<UpdateInfo> {
+    let assets = json["assets"].as_array()?;
+    let url = pick_url(assets)?;
+    Some(UpdateInfo { version: tag.to_string(), url })
+}
+
+#[cfg(windows)]
+fn pick_url(assets: &[serde_json::Value]) -> Option<String> {
+    assets.iter()
+        .find(|a| a["name"].as_str().map(|n| n.ends_with(".exe")).unwrap_or(false))
+        .and_then(|a| a["browser_download_url"].as_str().map(str::to_string))
+}
+
+#[cfg(target_os = "macos")]
+fn pick_url(assets: &[serde_json::Value]) -> Option<String> {
+    let is_arm = cfg!(target_arch = "aarch64");
+    // Sur Apple Silicon : prefere l'asset aarch64, sinon premier .dmg.
+    let found = if is_arm {
+        assets.iter().find(|a| {
+            a["name"].as_str().map(|n| n.ends_with(".dmg") && (n.contains("aarch64") || n.contains("arm64"))).unwrap_or(false)
+        }).or_else(|| assets.iter().find(|a| a["name"].as_str().map(|n| n.ends_with(".dmg")).unwrap_or(false)))
+    } else {
+        assets.iter().find(|a| {
+            a["name"].as_str().map(|n| n.ends_with(".dmg") && !n.contains("aarch64") && !n.contains("arm64")).unwrap_or(false)
+        }).or_else(|| assets.iter().find(|a| a["name"].as_str().map(|n| n.ends_with(".dmg")).unwrap_or(false)))
+    };
+    found.and_then(|a| a["browser_download_url"].as_str().map(str::to_string))
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
+fn pick_url(_: &[serde_json::Value]) -> Option<String> { None }
+
+// Interroge l'API GitHub Releases et retourne les infos de la derniere release
+// si elle est plus recente que la version courante (issue de tauri.conf.json).
+#[tauri::command]
+pub fn check_update(app: AppHandle) -> Option<UpdateInfo> {
+    let current = app.package_info().version.to_string(); // "2.0.0"
+
+    let resp = Command::new("curl")
+        .args([
+            "-sf",
+            "--max-time", "8",
+            "-H", "Accept: application/vnd.github+json",
+            "-H", "X-GitHub-Api-Version: 2022-11-28",
+            "https://api.github.com/repos/Splainte/Robloader/releases/latest",
+        ])
+        .output()
+        .ok()?;
+
+    let json: serde_json::Value = serde_json::from_slice(&resp.stdout).ok()?;
+    let tag = json["tag_name"].as_str()?.trim_start_matches('v');
+
+    if !is_newer(tag, &current) {
+        return None;
+    }
+
+    pick_asset(&json, tag)
+}
+
+// Telecharge l'installeur dans un dossier temporaire et le lance, puis quitte.
+#[tauri::command]
+pub async fn install_update(app: AppHandle, url: String) -> Result<(), String> {
+    let ext = if cfg!(windows) { ".exe" } else { ".dmg" };
+    let dest = std::env::temp_dir().join(format!("RobloaderUpdate{ext}"));
+
+    // Telechargement via curl (deja disponible sur macOS et Windows 11).
+    let status = Command::new("curl")
+        .args(["-sfL", "--max-time", "300", "-o", dest.to_str().unwrap(), &url])
+        .status()
+        .map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err("Échec du téléchargement".into());
+    }
+
+    // Lancement de l'installeur.
+    #[cfg(windows)]
+    {
+        Command::new(&dest).spawn().map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // Monte le DMG, copie l'app, demonte — identique au patch V1.
+        let mnt = std::env::temp_dir().join("RobloaderUpdateMnt");
+        let _ = std::fs::create_dir_all(&mnt);
+        Command::new("hdiutil")
+            .args(["attach", "-nobrowse", "-mountpoint", mnt.to_str().unwrap(), dest.to_str().unwrap()])
+            .status()
+            .map_err(|e| e.to_string())?;
+        let app_src = std::fs::read_dir(&mnt)
+            .ok()
+            .and_then(|mut d| d.find(|e| e.as_ref().map(|e| e.file_name().to_string_lossy().ends_with(".app")).unwrap_or(false)))
+            .and_then(|e| e.ok())
+            .map(|e| e.path());
+        if let Some(src) = app_src {
+            let dst = std::path::Path::new("/Applications").join(src.file_name().unwrap());
+            let _ = std::fs::remove_dir_all(&dst);
+            Command::new("cp").args(["-R", src.to_str().unwrap(), dst.to_str().unwrap()]).status().ok();
+        }
+        Command::new("hdiutil").args(["detach", mnt.to_str().unwrap()]).status().ok();
+    }
+
+    app.exit(0);
+    Ok(())
+}
+
+fn is_newer(candidate: &str, current: &str) -> bool {
+    let parse = |s: &str| -> Vec<u32> {
+        s.split('.').map(|p| p.parse().unwrap_or(0)).collect()
+    };
+    let c = parse(candidate);
+    let cur = parse(current);
+    for i in 0..3.max(c.len()).max(cur.len()) {
+        let a = c.get(i).copied().unwrap_or(0);
+        let b = cur.get(i).copied().unwrap_or(0);
+        if a != b { return a > b; }
+    }
+    false
+}
+
+// ============================================================
 //  Commandes Tauri
 // ============================================================
 
