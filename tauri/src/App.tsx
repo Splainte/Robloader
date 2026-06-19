@@ -302,6 +302,22 @@ function App() {
     invoke<EnvInfo>("get_env").then(setEnv).catch(() => {});
   }, []);
 
+  // macOS : CSS AccentColor ne suit pas l'OS dans WKWebView — on lit la couleur
+  // exacte depuis le backend et on la relit a chaque regain de focus (= retour
+  // depuis les Reglages). Windows : CSS AccentColor est natif dans WebView2.
+  useEffect(() => {
+    if (!isMac) return;
+    const applyAccent = () =>
+      invoke<string | null>("get_accent_color").then((c) => {
+        if (c) document.documentElement.style.setProperty("--rl-accent", c);
+      }).catch(() => {});
+    applyAccent();
+    const unlisten = appWindow.onFocusChanged(({ payload: focused }) => {
+      if (focused) applyAccent();
+    });
+    return () => { unlisten.then((f) => f()); };
+  }, []);
+
   // Verif mise a jour unique au lancement — pas de polling.
   useEffect(() => {
     invoke<UpdateInfo | null>("check_update").then((u) => { if (u) setAvailableUpdate(u); }).catch(() => {});

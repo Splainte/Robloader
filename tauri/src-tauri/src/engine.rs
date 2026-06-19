@@ -1296,6 +1296,41 @@ fn run_pipeline_inner(
 }
 
 // ============================================================
+//  Couleur d'accent macOS (CSS AccentColor ne suit pas l'OS dans WKWebView)
+// ============================================================
+
+// Retourne la couleur d'accent exacte issue des Reglages macOS.
+// Les utilisateurs ne peuvent choisir que parmi 8 presets — la correspondance
+// entier → hex est donc exhaustive et exacte.
+// Sur les autres plateformes retourne None (CSS AccentColor gere Windows nativement).
+#[tauri::command]
+pub fn get_accent_color() -> Option<String> {
+    #[cfg(not(target_os = "macos"))]
+    return None;
+
+    #[cfg(target_os = "macos")]
+    {
+        let idx = Command::new("defaults")
+            .args(["read", "-g", "AppleAccentColor"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| s.trim().parse::<i32>().ok());
+        Some(match idx {
+            Some(-1) => "#8e8e93", // Graphite
+            Some(0)  => "#ff3b30", // Rouge
+            Some(1)  => "#ff9500", // Orange
+            Some(2)  => "#ffcc00", // Jaune
+            Some(3)  => "#34c759", // Vert
+            Some(4)  => "#007aff", // Bleu
+            Some(5)  => "#af52de", // Violet
+            Some(6)  => "#ff2d55", // Rose
+            _        => "#007aff", // Multicolore (clé absente) = Bleu
+        }.to_string())
+    }
+}
+
+// ============================================================
 //  Auto-update (Option B : GitHub Releases API, même logique que V1)
 // ============================================================
 

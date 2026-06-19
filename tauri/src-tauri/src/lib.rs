@@ -85,6 +85,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             engine::get_env,
+            engine::get_accent_color,
             engine::check_update,
             engine::install_update,
             engine::set_download_dir,
