@@ -1,12 +1,18 @@
 name: build
 
-# Construit Robloader V2 (Tauri) pour Windows + macOS (Apple Silicon & Intel) a chaque tag vX.Y.Z,
-# ou manuellement (onglet Actions -> Run workflow). Attache les installeurs a la Release du tag.
+# Construit Robloader V2 (Tauri) pour Windows + macOS (DMG universal2 Intel+ARM)
+# a chaque tag vX.Y.Z, ou manuellement (onglet Actions -> Run workflow). Attache les
+# installeurs a la Release du tag.
 #
 # Livrables (noms natifs Tauri, attendus tels quels par l'updater interne pick_url dans engine.rs) :
-#   - Windows         : Robloader_<ver>_x64-setup.exe   (NSIS, ffmpeg/ffprobe/yt-dlp/deno embarques)
-#   - macOS Apple Sil. : Robloader_<ver>_aarch64.dmg
-#   - macOS Intel      : Robloader_<ver>_x64.dmg
+#   - Windows : Robloader_<ver>_x64-setup.exe       (NSIS, binaires embarques)
+#   - macOS   : Robloader_<ver>_universal.dmg       (Intel + Apple Silicon)
+#
+# macOS : on ne build PLUS sur runner Intel (macos-13, en retrait chez GitHub). A la place un
+# DMG universal2 est produit sur macos-14 (Apple Silicon) : binaires embarques fusionnes en
+# fat binaries via lipo (cf prepare-bins.mjs, ROBLOADER_UNIVERSAL=1) + tauri build --target
+# universal-apple-darwin. Un seul DMG universal couvre les deux branches de l'updater
+# (aarch64 -> 1er .dmg ; Intel -> .dmg sans "aarch64").
 on:
   push:
     tags: ['v*']
@@ -23,15 +29,19 @@ jobs:
         include:
           - platform: windows-latest
             artifact: Robloader-windows
-            # NSIS genere par Tauri : un seul installeur auto-suffisant.
+            universal: '0'
+            rust_target: ''
+            tauri_args: ''
             glob: tauri/src-tauri/target/release/bundle/nsis/*-setup.exe
-          - platform: macos-14        # Apple Silicon (aarch64)
-            artifact: Robloader-macos-arm
-            glob: tauri/src-tauri/target/release/bundle/dmg/*.dmg
-          - platform: macos-13        # Intel (x86_64)
-            artifact: Robloader-macos-intel
-            glob: tauri/src-tauri/target/release/bundle/dmg/*.dmg
+          - platform: macos-14        # Apple Silicon -> DMG universal2 (Intel + ARM)
+            artifact: Robloader-macos
+            universal: '1'
+            rust_target: x86_64-apple-darwin
+            tauri_args: '-- --target universal-apple-darwin'
+            glob: tauri/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
     runs-on: ${{ matrix.platform }}
+    env:
+      ROBLOADER_UNIVERSAL: ${{ matrix.universal }}
     steps:
       - uses: actions/checkout@v4
 
@@ -42,6 +52,10 @@ jobs:
       - name: Toolchain Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cible Rust additionnelle (cross-arch macOS)
+        if: matrix.rust_target != ''
+        run: rustup target add ${{ matrix.rust_target }}
+
       - name: Cache cargo (registry + target)
         uses: actions/cache@v4
         with:
@@ -49,8 +63,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             tauri/src-tauri/target
-          key: ${{ matrix.platform }}-cargo-${{ hashFiles('tauri/src-tauri/Cargo.lock') }}
-          restore-keys: ${{ matrix.platform }}-cargo-
+          key: ${{ matrix.platform }}-${{ matrix.universal }}-cargo-${{ hashFiles('tauri/src-tauri/Cargo.lock') }}
+          restore-keys: ${{ matrix.platform }}-${{ matrix.universal }}-cargo-
 
       - name: Dependances npm
         working-directory: tauri
@@ -60,9 +74,9 @@ jobs:
         working-directory: tauri
         run: npm run prepare-bins
 
-      - name: Build Tauri (.app/.dmg ou .exe)
+      - name: Build Tauri (.dmg universal2 ou .exe)
         working-directory: tauri
-        run: npm run tauri build
+        run: npm run tauri build ${{ matrix.tauri_args }}
 
       - name: Collecter le livrable
         shell: bash
@@ -76,7 +90,7 @@ jobs:
           name: ${{ matrix.artifact }}
           path: out/*
 
-  # Publie la Release UNE SEULE FOIS, avec les trois installeurs, apres la reussite des builds.
+  # Publie la Release UNE SEULE FOIS, avec les deux installeurs, apres la reussite des builds.
   # Conserve l'etat draft : Robin valide puis publie a la main (la publication declenche la
   # migration auto des utilisateurs V1, qui interrogent releases/latest).
   release:
@@ -84,7 +98,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
-      - name: Recuperer les livrables des trois builds
+      - name: Recuperer les livrables
         uses: actions/download-artifact@v4
         with:
           path: artifacts

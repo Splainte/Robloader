@@ -19,6 +19,71 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const binDir = join(__dirname, "..", "src-tauri", "binaries");
 mkdirSync(binDir, { recursive: true });
 
+// ── Mode universal2 (macOS Intel + Apple Silicon en un seul .app/.dmg) ───────
+// Active par ROBLOADER_UNIVERSAL=1 (CI macOS, runner Apple Silicon uniquement).
+// Produit des binaires « fat » nommes pour le triple `universal-apple-darwin`,
+// requis par `tauri build --target universal-apple-darwin`. Evite le runner
+// macos-13 Intel (en retrait chez GitHub), comme la chaine V1.
+if (process.env.ROBLOADER_UNIVERSAL === "1") {
+  if (process.platform !== "darwin") {
+    throw new Error("ROBLOADER_UNIVERSAL=1 n'a de sens que sur macOS.");
+  }
+  const utriple = "universal-apple-darwin";
+  console.log(`Mode universal2 → ${utriple}`);
+  const work = join(binDir, "_universal_tmp");
+  execSync(`rm -rf "${work}"`);
+  mkdirSync(work, { recursive: true });
+
+  const sh = (cmd) => execSync(cmd, { stdio: ["ignore", "pipe", "pipe"] }).toString().trim();
+  const lipo = (a, b, out) => {
+    execSync(`lipo -create "${a}" "${b}" -output "${out}"`);
+    chmodSync(out, 0o755);
+  };
+  // npm pack d'un paquet par-arch (npm pack ne filtre pas os/cpu), extraction,
+  // puis recherche du binaire `name` dans l'arborescence extraite.
+  const fetchBin = (spec, name) => {
+    const tgz = join(work, sh(`npm pack ${spec} --silent --pack-destination "${work}"`).split("\n").pop());
+    const dest = join(work, spec.replace(/[^a-z0-9]+/gi, "_"));
+    mkdirSync(dest, { recursive: true });
+    execSync(`tar -xzf "${tgz}" -C "${dest}"`);
+    const found = sh(`find "${dest}" -type f -name "${name}"`).split("\n").filter(Boolean)[0];
+    if (!found) throw new Error(`Binaire ${name} introuvable dans ${spec}`);
+    return found;
+  };
+
+  // ffmpeg / ffprobe : fusion des paquets installer par-arch.
+  lipo(fetchBin("@ffmpeg-installer/darwin-arm64", "ffmpeg"),
+       fetchBin("@ffmpeg-installer/darwin-x64", "ffmpeg"),
+       join(binDir, `ffmpeg-${utriple}`));
+  console.log("✓ ffmpeg  (universal2)");
+  lipo(fetchBin("@ffprobe-installer/darwin-arm64", "ffprobe"),
+       fetchBin("@ffprobe-installer/darwin-x64", "ffprobe"),
+       join(binDir, `ffprobe-${utriple}`));
+  console.log("✓ ffprobe (universal2)");
+
+  // yt-dlp : yt-dlp_macos est deja un binaire universal2.
+  const ytdlpUniv = join(binDir, `yt-dlp-${utriple}`);
+  await download("https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos", ytdlpUniv);
+  chmodSync(ytdlpUniv, 0o755);
+  console.log("✓ yt-dlp  (universal2)");
+
+  // deno : fusion des deux zips par-arch.
+  const denoArch = async (arch) => {
+    const zip = join(work, `deno-${arch}.zip`);
+    await download(`https://github.com/denoland/deno/releases/latest/download/deno-${arch}-apple-darwin.zip`, zip);
+    const d = join(work, `deno_${arch}`);
+    mkdirSync(d, { recursive: true });
+    execSync(`unzip -o "${zip}" -d "${d}"`, { stdio: "pipe" });
+    return join(d, "deno");
+  };
+  lipo(await denoArch("aarch64"), await denoArch("x86_64"), join(binDir, `deno-${utriple}`));
+  console.log("✓ deno    (universal2)");
+
+  execSync(`rm -rf "${work}"`);
+  console.log("\nBinaires universal2 prêts.");
+  process.exit(0);
+}
+
 // Détecte le triple cible depuis rustc (ex: aarch64-apple-darwin)
 const rustInfo = execSync("rustc -vV", { encoding: "utf8" });
 const triple = /host: (\S+)/.exec(rustInfo)?.[1];
