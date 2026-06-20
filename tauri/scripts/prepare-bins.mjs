@@ -21,23 +21,37 @@ mkdirSync(binDir, { recursive: true });
 
 // ── Mode universal2 (macOS Intel + Apple Silicon en un seul .app/.dmg) ───────
 // Active par ROBLOADER_UNIVERSAL=1 (CI macOS, runner Apple Silicon uniquement).
-// Produit des binaires « fat » nommes pour le triple `universal-apple-darwin`,
-// requis par `tauri build --target universal-apple-darwin`. Evite le runner
-// macos-13 Intel (en retrait chez GitHub), comme la chaine V1.
+// Pour `tauri build --target universal-apple-darwin`, Tauri compile l'app pour
+// chaque arch puis lipo SEULEMENT le binaire principal — les sidecars sont
+// copies tels quels (cf tauri-cli interface/rust/desktop.rs). On produit donc
+// des sidecars « fat » (Intel+ARM) et on les depose sous LES TROIS suffixes de
+// triple : -aarch64-apple-darwin et -x86_64-apple-darwin (verifies par le
+// build-script de chaque sous-compilation) + -universal-apple-darwin (etape
+// bundle). Evite le runner macos-13 Intel (en retrait chez GitHub), comme V1.
 if (process.env.ROBLOADER_UNIVERSAL === "1") {
   if (process.platform !== "darwin") {
     throw new Error("ROBLOADER_UNIVERSAL=1 n'a de sens que sur macOS.");
   }
-  const utriple = "universal-apple-darwin";
-  console.log(`Mode universal2 → ${utriple}`);
+  console.log("Mode universal2 → sidecars fat (aarch64 + x86_64)");
   const work = join(binDir, "_universal_tmp");
   execSync(`rm -rf "${work}"`);
   mkdirSync(work, { recursive: true });
 
+  const triples = ["aarch64-apple-darwin", "x86_64-apple-darwin", "universal-apple-darwin"];
   const sh = (cmd) => execSync(cmd, { stdio: ["ignore", "pipe", "pipe"] }).toString().trim();
-  const lipo = (a, b, out) => {
+  const lipoCreate = (a, b, out) => {
     execSync(`lipo -create "${a}" "${b}" -output "${out}"`);
     chmodSync(out, 0o755);
+    return out;
+  };
+  // Depose un binaire fat sous les trois noms de triple attendus par Tauri.
+  const place = (fatPath, tool) => {
+    for (const t of triples) {
+      const dest = join(binDir, `${tool}-${t}`);
+      copyFileSync(fatPath, dest);
+      chmodSync(dest, 0o755);
+    }
+    console.log(`✓ ${tool}  (universal2)`);
   };
   // npm pack d'un paquet par-arch (npm pack ne filtre pas os/cpu), extraction,
   // puis recherche du binaire `name` dans l'arborescence extraite.
@@ -51,23 +65,20 @@ if (process.env.ROBLOADER_UNIVERSAL === "1") {
     return found;
   };
 
-  // ffmpeg / ffprobe : fusion des paquets installer par-arch.
-  lipo(fetchBin("@ffmpeg-installer/darwin-arm64", "ffmpeg"),
-       fetchBin("@ffmpeg-installer/darwin-x64", "ffmpeg"),
-       join(binDir, `ffmpeg-${utriple}`));
-  console.log("✓ ffmpeg  (universal2)");
-  lipo(fetchBin("@ffprobe-installer/darwin-arm64", "ffprobe"),
-       fetchBin("@ffprobe-installer/darwin-x64", "ffprobe"),
-       join(binDir, `ffprobe-${utriple}`));
-  console.log("✓ ffprobe (universal2)");
+  // ffmpeg / ffprobe : fusion des paquets installer par-arch en fat binaries.
+  place(lipoCreate(fetchBin("@ffmpeg-installer/darwin-arm64", "ffmpeg"),
+                   fetchBin("@ffmpeg-installer/darwin-x64", "ffmpeg"),
+                   join(work, "ffmpeg.fat")), "ffmpeg");
+  place(lipoCreate(fetchBin("@ffprobe-installer/darwin-arm64", "ffprobe"),
+                   fetchBin("@ffprobe-installer/darwin-x64", "ffprobe"),
+                   join(work, "ffprobe.fat")), "ffprobe");
 
-  // yt-dlp : yt-dlp_macos est deja un binaire universal2.
-  const ytdlpUniv = join(binDir, `yt-dlp-${utriple}`);
-  await download("https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos", ytdlpUniv);
-  chmodSync(ytdlpUniv, 0o755);
-  console.log("✓ yt-dlp  (universal2)");
+  // yt-dlp : yt-dlp_macos est deja un binaire universal2 (fat) -> copie directe.
+  const ytdlpFat = join(work, "yt-dlp.fat");
+  await download("https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos", ytdlpFat);
+  place(ytdlpFat, "yt-dlp");
 
-  // deno : fusion des deux zips par-arch.
+  // deno : fusion des deux zips par-arch en un fat binary.
   const denoArch = async (arch) => {
     const zip = join(work, `deno-${arch}.zip`);
     await download(`https://github.com/denoland/deno/releases/latest/download/deno-${arch}-apple-darwin.zip`, zip);
@@ -76,8 +87,8 @@ if (process.env.ROBLOADER_UNIVERSAL === "1") {
     execSync(`unzip -o "${zip}" -d "${d}"`, { stdio: "pipe" });
     return join(d, "deno");
   };
-  lipo(await denoArch("aarch64"), await denoArch("x86_64"), join(binDir, `deno-${utriple}`));
-  console.log("✓ deno    (universal2)");
+  place(lipoCreate(await denoArch("aarch64"), await denoArch("x86_64"),
+                   join(work, "deno.fat")), "deno");
 
   execSync(`rm -rf "${work}"`);
   console.log("\nBinaires universal2 prêts.");
