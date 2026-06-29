@@ -30,7 +30,10 @@ serde_json = "1"
 window-vibrancy = "0.6"
 
 # macOS : envoi de messages Obj-C dynamique pour corriger l'ancrage du
-# contenu pendant l'animation de resize/zoom (deja tire par window-vibrancy).
+# contenu pendant l'animation de resize/zoom (deja tire par window-vibrancy)
+# et pour appliquer le vrai Liquid Glass (NSGlassEffectView) sur macOS 26.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
+# CGRect/CGGeometry : type de la frame passee a NSGlassEffectView.
+objc2-core-foundation = { version = "0.3", features = ["CGGeometry"] }
 

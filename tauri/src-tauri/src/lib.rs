@@ -36,6 +36,54 @@ unsafe fn stabilize_content_on_resize(view: *mut objc2::runtime::AnyObject) {
     }
 }
 
+// macOS 26 (Tahoe) : VRAI "Liquid Glass" via NSGlassEffectView (AppKit), avec
+// la refraction optique sur les bords. La classe n'existe qu'a partir de macOS
+// 26 : si elle est absente, on renvoie false et l'appelant retombe sur la
+// Vibrancy classique (NSVisualEffectView). Aucune liaison a la compilation : on
+// resout la classe dynamiquement, donc ca compile sans le SDK 26.
+//
+// NOTE (a valider sur Mac reel) : NSGlassEffectView est concu pour ENVELOPPER
+// un contenu (contentView). On l'utilise ici comme vue de fond plein cadre,
+// sous la WebView transparente. Si le verre ne s'affiche pas dans cette
+// configuration, plan B = reparenter la WebView dans le contentView du verre.
+#[cfg(target_os = "macos")]
+unsafe fn apply_liquid_glass(window: &tauri::WebviewWindow) -> bool {
+    use objc2::runtime::{AnyClass, AnyObject};
+    use objc2::msg_send;
+    use objc2_core_foundation::CGRect;
+
+    // Presence de la classe = macOS 26+. Absente => OS trop ancien.
+    let Some(glass_class) = AnyClass::get(c"NSGlassEffectView") else {
+        return false;
+    };
+
+    let Ok(ns_window) = window.ns_window() else {
+        return false;
+    };
+    let ns_window = ns_window as *mut AnyObject;
+    let content_view: *mut AnyObject = msg_send![ns_window, contentView];
+    if content_view.is_null() {
+        return false;
+    }
+    let bounds: CGRect = msg_send![content_view, bounds];
+
+    // Instancie le verre, etire sur toute la fenetre.
+    let glass: *mut AnyObject = msg_send![glass_class, alloc];
+    let glass: *mut AnyObject = msg_send![glass, initWithFrame: bounds];
+    if glass.is_null() {
+        return false;
+    }
+    // Suit le redimensionnement : NSViewWidthSizable(2) | NSViewHeightSizable(16).
+    let _: () = msg_send![glass, setAutoresizingMask: 18usize];
+    // Coins arrondis assortis a la fenetre (a ajuster au rendu reel).
+    let _: () = msg_send![glass, setCornerRadius: 10.0f64];
+
+    // Insere le verre tout au fond, sous la WebView (NSWindowBelow = -1).
+    let nil = std::ptr::null::<AnyObject>();
+    let _: () = msg_send![content_view, addSubview: glass, positioned: -1isize, relativeTo: nil];
+    true
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -49,16 +97,23 @@ pub fn run() {
             #[cfg(not(any(target_os = "macos", target_os = "windows")))]
             let _ = &window;
 
-            // macOS : Vibrancy natif (NSVisualEffectView "Liquid Glass").
-            // None pour theme/state laisse le systeme suivre l'apparence claire/sombre.
+            // macOS 26 : vrai Liquid Glass natif (NSGlassEffectView). Sur les
+            // versions anterieures, fallback automatique sur la Vibrancy
+            // classique (NSVisualEffectView). None pour theme/state laisse le
+            // systeme suivre l'apparence claire/sombre.
             #[cfg(target_os = "macos")]
-            apply_vibrancy(
-                &window,
-                NSVisualEffectMaterial::UnderWindowBackground,
-                Some(NSVisualEffectState::Active),
-                None,
-            )
-            .expect("Vibrancy : uniquement supporte sur macOS");
+            {
+                let glass_applied = unsafe { apply_liquid_glass(&window) };
+                if !glass_applied {
+                    apply_vibrancy(
+                        &window,
+                        NSVisualEffectMaterial::UnderWindowBackground,
+                        Some(NSVisualEffectState::Active),
+                        None,
+                    )
+                    .expect("Vibrancy : uniquement supporte sur macOS");
+                }
+            }
 
             // Corrige le "saut" du contenu pendant l'animation de zoom macOS.
             #[cfg(target_os = "macos")]
