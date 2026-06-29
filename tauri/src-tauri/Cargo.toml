@@ -34,6 +34,6 @@ window-vibrancy = "0.6"
 # et pour appliquer le vrai Liquid Glass (NSGlassEffectView) sur macOS 26.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-# CGRect/CGGeometry : type de la frame passee a NSGlassEffectView.
-objc2-core-foundation = { version = "0.3", features = ["CGGeometry"] }
+# CFCGTypes : fournit CGRect (type de la frame passee a NSGlassEffectView).
+objc2-core-foundation = { version = "0.3", features = ["CFCGTypes"] }
 
