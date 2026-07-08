@@ -36,6 +36,21 @@ unsafe fn stabilize_content_on_resize(view: *mut objc2::runtime::AnyObject) {
     }
 }
 
+// Fond opaque de secours quand le materiau natif (Mica/Vibrancy) est
+// indisponible : la page a un fond CSS 100% transparent, sans materiau la
+// fenetre serait invisible/illisible.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn fallback_solid_background<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>) {
+    use tauri::webview::Color;
+    let dark = matches!(window.theme(), Ok(tauri::Theme::Dark));
+    let color = if dark {
+        Color(32, 32, 32, 255)
+    } else {
+        Color(243, 243, 243, 255)
+    };
+    let _ = window.set_background_color(Some(color));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -52,13 +67,16 @@ pub fn run() {
             // macOS : Vibrancy natif (NSVisualEffectView "Liquid Glass").
             // None pour theme/state laisse le systeme suivre l'apparence claire/sombre.
             #[cfg(target_os = "macos")]
-            apply_vibrancy(
+            if apply_vibrancy(
                 &window,
                 NSVisualEffectMaterial::UnderWindowBackground,
                 Some(NSVisualEffectState::Active),
                 None,
             )
-            .expect("Vibrancy : uniquement supporte sur macOS");
+            .is_err()
+            {
+                fallback_solid_background(&window);
+            }
 
             // Corrige le "saut" du contenu pendant l'animation de zoom macOS.
             #[cfg(target_os = "macos")]
@@ -77,8 +95,12 @@ pub fn run() {
             {
                 let _ = window.set_decorations(false);
                 // Mica natif. None => suit le theme clair/sombre du systeme.
-                apply_mica(&window, None)
-                    .expect("Mica : uniquement supporte sur Windows 11");
+                // Windows 10 : Mica n'existe pas — comme le fond CSS est 100%
+                // transparent, on peint un fond opaque au lieu de paniquer
+                // (avant ce correctif l'app crashait au lancement sur Win10).
+                if apply_mica(&window, None).is_err() {
+                    fallback_solid_background(&window);
+                }
             }
 
             Ok(())
