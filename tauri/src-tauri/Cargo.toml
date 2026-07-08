@@ -34,3 +34,11 @@ window-vibrancy = "0.6"
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 
+# Profil release recommande par Tauri : binaire plus compact et plus rapide a
+# charger (le build CI est plus long, sans impact pour le dev local).
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
+
