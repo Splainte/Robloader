@@ -517,6 +517,7 @@ function App() {
             value={start}
             placeholder="00:00"
             onChange={(e) => setStart(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && startDownload()}
             spellCheck={false}
           />
           <span className="mini-label">Fin</span>
@@ -525,6 +526,7 @@ function App() {
             value={end}
             placeholder="01:30"
             onChange={(e) => setEnd(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && startDownload()}
             spellCheck={false}
           />
           <span className="hint">format MM:SS ou HH:MM:SS — laisser vide pour la vidéo entière</span>

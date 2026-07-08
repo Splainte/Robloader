@@ -10,7 +10,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -66,9 +66,26 @@ impl TaskHandle {
     }
 }
 
+// Limite de telechargements simultanes : au-dela, les taches restent en
+// file ("En attente…" cote UI) jusqu'a ce qu'une place se libere.
+const MAX_CONCURRENT_DOWNLOADS: u32 = 3;
+
 #[derive(Default)]
 pub struct Engine {
     tasks: Arc<Mutex<HashMap<u64, TaskHandle>>>,
+    // (nombre de pipelines actifs, reveil des taches en attente)
+    running: Arc<(Mutex<u32>, Condvar)>,
+}
+
+// Jeton de la file : rend sa place (et reveille les taches en attente) a la
+// destruction, meme si le pipeline sort par une erreur.
+struct Permit(Arc<(Mutex<u32>, Condvar)>);
+impl Drop for Permit {
+    fn drop(&mut self) {
+        let (lock, cvar) = &*self.0;
+        *lock.lock().unwrap() -= 1;
+        cvar.notify_all();
+    }
 }
 
 // ---------- Messages UI ----------
@@ -644,7 +661,7 @@ fn resolution_label(width: u32, height: u32) -> String {
     if short == 0 {
         return String::new();
     }
-    const LADDER: &[u32] = &[2160, 1440, 1080, 720, 480, 360];
+    const LADDER: &[u32] = &[4320, 2160, 1440, 1080, 720, 480, 360];
     let best = LADDER
         .iter()
         .min_by_key(|&&r| (r as i64 - short as i64).unsigned_abs())
@@ -704,9 +721,17 @@ fn download_pipeline(app: &AppHandle, handle: &TaskHandle, opts: &DownloadOpts, 
         .unwrap_or_else(default_downloads_dir);
     let _ = std::fs::create_dir_all(&download_dir);
 
-    match run_pipeline_inner(app, handle, opts, bins, &url, &download_dir) {
+    let mut temp_prefix: Option<String> = None;
+    match run_pipeline_inner(app, handle, opts, bins, &url, &download_dir, &mut temp_prefix) {
         Ok(_) => {}
         Err(e) => {
+            // Annulation ou echec : on retire les fichiers temporaires
+            // (temp_<id>.*) pour ne pas polluer le dossier de destination.
+            if let Some(prefix) = &temp_prefix {
+                for p in files_with_prefix(&download_dir, prefix) {
+                    let _ = std::fs::remove_file(p);
+                }
+            }
             if handle.cancelled() {
                 status(app, id, "Annulé.", "warn");
                 emit(
@@ -801,10 +826,16 @@ fn run_pipeline_inner(
     bins: &Bins,
     url: &str,
     download_dir: &Path,
+    temp_prefix: &mut Option<String>,
 ) -> Result<(), String> {
     let id = opts.id;
     let start_seconds = parse_timecode(&opts.start);
     let end_seconds = parse_timecode(&opts.end);
+    if let (Some(s), Some(e)) = (start_seconds, end_seconds) {
+        if e <= s {
+            return Err("Extrait invalide : le timecode de fin doit être après le début.".into());
+        }
+    }
 
     let yt = is_youtube(url);
     let js_runtime = has_js_runtime();
@@ -901,6 +932,9 @@ fn run_pipeline_inner(
         .and_then(|v| v.as_str())
         .unwrap_or("temp")
         .to_string();
+    // A partir d'ici les fichiers temporaires portent ce prefixe : on le
+    // remonte a l'appelant pour qu'il nettoie en cas d'echec/annulation.
+    *temp_prefix = Some(format!("temp_{video_id}"));
     let total_duration = info.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
     let channel = info
         .get("channel")
@@ -974,14 +1008,23 @@ fn run_pipeline_inner(
         cmd.arg(url);
         let (_code, _err) = run_proc(handle, cmd, |_| {}).map_err(|e| e.to_string())?;
         check_cancel(handle)?;
-        let srts: Vec<PathBuf> = files_with_prefix(download_dir, &base_title)
+        let mut srts: Vec<PathBuf> = files_with_prefix(download_dir, &base_title)
             .into_iter()
             .filter(|p| ext_lower(p) == "srt")
             .collect();
-        final_path = srts
-            .into_iter()
-            .next()
-            .ok_or("Aucun sous-titre disponible pour cette vidéo.")?;
+        // Plusieurs langues possibles (fr + en) : on pointe la piste FR en priorite.
+        let fr = srts.iter().position(|p| {
+            p.file_name()
+                .map(|n| n.to_string_lossy().to_lowercase().contains(".fr"))
+                .unwrap_or(false)
+        });
+        final_path = match fr {
+            Some(i) => srts.swap_remove(i),
+            None => srts
+                .into_iter()
+                .next()
+                .ok_or("Aucun sous-titre disponible pour cette vidéo.")?,
+        };
     } else if audio_mode {
         // ---- Audio seul : DL complet natif puis decoupe/conversion ----
         status(app, id, "Téléchargement audio…", "info");
@@ -1303,8 +1346,9 @@ fn run_pipeline_inner(
 // Les utilisateurs ne peuvent choisir que parmi 8 presets — la correspondance
 // entier → hex est donc exhaustive et exacte.
 // Sur les autres plateformes retourne None (CSS AccentColor gere Windows nativement).
+// Async : lance `defaults` (un sous-processus) — hors du thread principal.
 #[tauri::command]
-pub fn get_accent_color() -> Option<String> {
+pub async fn get_accent_color() -> Option<String> {
     #[cfg(not(target_os = "macos"))]
     return None;
 
@@ -1376,20 +1420,22 @@ fn pick_url(_: &[serde_json::Value]) -> Option<String> { None }
 
 // Interroge l'API GitHub Releases et retourne les infos de la derniere release
 // si elle est plus recente que la version courante (issue de tauri.conf.json).
+// Commande async : une commande synchrone s'execute sur le thread principal et
+// gelerait toute l'UI pendant la requete reseau (jusqu'a 8 s au lancement).
 #[tauri::command]
-pub fn check_update(app: AppHandle) -> Option<UpdateInfo> {
+pub async fn check_update(app: AppHandle) -> Option<UpdateInfo> {
     let current = app.package_info().version.to_string(); // "2.0.0"
 
-    let resp = Command::new("curl")
-        .args([
-            "-sf",
-            "--max-time", "8",
-            "-H", "Accept: application/vnd.github+json",
-            "-H", "X-GitHub-Api-Version: 2022-11-28",
-            "https://api.github.com/repos/Splainte/Robloader/releases/latest",
-        ])
-        .output()
-        .ok()?;
+    let mut cmd = Command::new("curl");
+    cmd.args([
+        "-sf",
+        "--max-time", "8",
+        "-H", "Accept: application/vnd.github+json",
+        "-H", "X-GitHub-Api-Version: 2022-11-28",
+        "https://api.github.com/repos/Splainte/Robloader/releases/latest",
+    ]);
+    no_window(&mut cmd);
+    let resp = cmd.output().ok()?;
 
     let json: serde_json::Value = serde_json::from_slice(&resp.stdout).ok()?;
     let tag = json["tag_name"].as_str()?.trim_start_matches('v');
@@ -1408,10 +1454,10 @@ pub async fn install_update(app: AppHandle, url: String) -> Result<(), String> {
     let dest = std::env::temp_dir().join(format!("RobloaderUpdate{ext}"));
 
     // Telechargement via curl (deja disponible sur macOS et Windows 11).
-    let status = Command::new("curl")
-        .args(["-sfL", "--max-time", "300", "-o", dest.to_str().unwrap(), &url])
-        .status()
-        .map_err(|e| e.to_string())?;
+    let mut cmd = Command::new("curl");
+    cmd.args(["-sfL", "--max-time", "300", "-o", dest.to_str().unwrap(), &url]);
+    no_window(&mut cmd);
+    let status = cmd.status().map_err(|e| e.to_string())?;
     if !status.success() {
         return Err("Échec du téléchargement".into());
     }
@@ -1498,8 +1544,9 @@ fn save_config(cfg: &PersistConfig) {
     }
 }
 
+// Async : sonde le disque (cookies, navigateurs, binaires) hors du thread principal.
 #[tauri::command]
-pub fn get_env(app: AppHandle) -> EnvInfo {
+pub async fn get_env(app: AppHandle) -> EnvInfo {
     let cfg = load_config();
     let download_dir = cfg
         .download_dir
@@ -1567,9 +1614,43 @@ pub fn start_download(app: AppHandle, state: State<Engine>, opts: DownloadOpts) 
         ffprobe: resolve_binary(&app, "ffprobe"),
     };
     let tasks = state.tasks.clone();
+    let running = state.running.clone();
     let opts2 = opts.clone();
     std::thread::spawn(move || {
-        download_pipeline(&app, &handle, &opts2, &bins);
+        // File d'attente : on prend un jeton (au plus MAX_CONCURRENT_DOWNLOADS
+        // pipelines actifs) en surveillant l'annulation pendant l'attente.
+        let permit = loop {
+            if handle.cancelled() {
+                break None;
+            }
+            let (lock, cvar) = &*running;
+            let mut n = lock.lock().unwrap();
+            if *n < MAX_CONCURRENT_DOWNLOADS {
+                *n += 1;
+                break Some(Permit(running.clone()));
+            }
+            let _ = cvar
+                .wait_timeout(n, std::time::Duration::from_millis(200))
+                .unwrap();
+        };
+        match permit {
+            Some(_permit) => download_pipeline(&app, &handle, &opts2, &bins),
+            None => {
+                // Annulee alors qu'elle attendait encore son tour.
+                status(&app, opts2.id, "Annulé.", "warn");
+                emit(
+                    &app,
+                    TaskUpdate {
+                        id: opts2.id,
+                        action: Some("none".into()),
+                        percent: Some(0.0),
+                        indeterminate: Some(false),
+                        done: Some(true),
+                        ..Default::default()
+                    },
+                );
+            }
+        }
         tasks.lock().unwrap().remove(&opts2.id);
     });
 }
