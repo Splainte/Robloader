@@ -15,7 +15,7 @@ const isMac = navigator.userAgent.includes("Macintosh");
 // ------------------------------------------------------------------
 const QUALITY_LABELS = [
   "Qualité max (jusqu'à 4K)",
-  "1440p (2K)",
+  "1440p (QHD)",
   "1080p (Full HD)",
   "720p (HD)",
   "480p",

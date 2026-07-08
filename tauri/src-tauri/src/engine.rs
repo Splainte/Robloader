@@ -1465,7 +1465,20 @@ pub async fn install_update(app: AppHandle, url: String) -> Result<(), String> {
     // Lancement de l'installeur.
     #[cfg(windows)]
     {
-        Command::new(&dest).spawn().map_err(|e| e.to_string())?;
+        // Mise a jour "un clic" : installeur NSIS silencieux (/S) puis relance
+        // de l'app, via un PowerShell detache qui survit a la fermeture de
+        // l'app (1 s de marge pour que le process soit bien termine avant que
+        // l'installeur ne remplace les fichiers).
+        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        let script = format!(
+            "Start-Sleep 1; Start-Process -FilePath '{}' -ArgumentList '/S' -Wait; Start-Process -FilePath '{}'",
+            dest.display(),
+            exe.display()
+        );
+        let mut cmd = Command::new("powershell");
+        cmd.args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script]);
+        no_window(&mut cmd);
+        cmd.spawn().map_err(|e| e.to_string())?;
     }
     #[cfg(target_os = "macos")]
     {
@@ -1481,12 +1494,22 @@ pub async fn install_update(app: AppHandle, url: String) -> Result<(), String> {
             .and_then(|mut d| d.find(|e| e.as_ref().map(|e| e.file_name().to_string_lossy().ends_with(".app")).unwrap_or(false)))
             .and_then(|e| e.ok())
             .map(|e| e.path());
+        let mut installed: Option<std::path::PathBuf> = None;
         if let Some(src) = app_src {
             let dst = std::path::Path::new("/Applications").join(src.file_name().unwrap());
             let _ = std::fs::remove_dir_all(&dst);
             Command::new("cp").args(["-R", src.to_str().unwrap(), dst.to_str().unwrap()]).status().ok();
+            installed = Some(dst);
         }
         Command::new("hdiutil").args(["detach", mnt.to_str().unwrap()]).status().ok();
+        // Relance la nouvelle version une fois l'ancienne instance fermee
+        // (le sh detache survit a app.exit).
+        if let Some(app_path) = installed {
+            let _ = Command::new("sh")
+                .arg("-c")
+                .arg(format!("sleep 1; open \"{}\"", app_path.display()))
+                .spawn();
+        }
     }
 
     app.exit(0);
