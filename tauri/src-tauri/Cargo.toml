@@ -1,6 +1,6 @@
 [package]
 name = "robloader-tauri"
-version = "2.0.0"
+version = "2.1.0"
 description = "Robloader — telechargeur video natif"
 authors = ["Splainte"]
 edition = "2021"

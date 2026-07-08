@@ -10,7 +10,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -66,9 +66,26 @@ impl TaskHandle {
     }
 }
 
+// Limite de telechargements simultanes : au-dela, les taches restent en
+// file ("En attente…" cote UI) jusqu'a ce qu'une place se libere.
+const MAX_CONCURRENT_DOWNLOADS: u32 = 3;
+
 #[derive(Default)]
 pub struct Engine {
     tasks: Arc<Mutex<HashMap<u64, TaskHandle>>>,
+    // (nombre de pipelines actifs, reveil des taches en attente)
+    running: Arc<(Mutex<u32>, Condvar)>,
+}
+
+// Jeton de la file : rend sa place (et reveille les taches en attente) a la
+// destruction, meme si le pipeline sort par une erreur.
+struct Permit(Arc<(Mutex<u32>, Condvar)>);
+impl Drop for Permit {
+    fn drop(&mut self) {
+        let (lock, cvar) = &*self.0;
+        *lock.lock().unwrap() -= 1;
+        cvar.notify_all();
+    }
 }
 
 // ---------- Messages UI ----------
@@ -1597,9 +1614,43 @@ pub fn start_download(app: AppHandle, state: State<Engine>, opts: DownloadOpts) 
         ffprobe: resolve_binary(&app, "ffprobe"),
     };
     let tasks = state.tasks.clone();
+    let running = state.running.clone();
     let opts2 = opts.clone();
     std::thread::spawn(move || {
-        download_pipeline(&app, &handle, &opts2, &bins);
+        // File d'attente : on prend un jeton (au plus MAX_CONCURRENT_DOWNLOADS
+        // pipelines actifs) en surveillant l'annulation pendant l'attente.
+        let permit = loop {
+            if handle.cancelled() {
+                break None;
+            }
+            let (lock, cvar) = &*running;
+            let mut n = lock.lock().unwrap();
+            if *n < MAX_CONCURRENT_DOWNLOADS {
+                *n += 1;
+                break Some(Permit(running.clone()));
+            }
+            let _ = cvar
+                .wait_timeout(n, std::time::Duration::from_millis(200))
+                .unwrap();
+        };
+        match permit {
+            Some(_permit) => download_pipeline(&app, &handle, &opts2, &bins),
+            None => {
+                // Annulee alors qu'elle attendait encore son tour.
+                status(&app, opts2.id, "Annulé.", "warn");
+                emit(
+                    &app,
+                    TaskUpdate {
+                        id: opts2.id,
+                        action: Some("none".into()),
+                        percent: Some(0.0),
+                        indeterminate: Some(false),
+                        done: Some(true),
+                        ..Default::default()
+                    },
+                );
+            }
+        }
         tasks.lock().unwrap().remove(&opts2.id);
     });
 }
