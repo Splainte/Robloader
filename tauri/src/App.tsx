@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
@@ -292,6 +293,7 @@ function App() {
   type UpdateInfo = { version: string; url: string };
   const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null);
   const [updateInstalling, setUpdateInstalling] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
   const idCounter = useRef(0);
 
   const profile = useMemo(() => detectProfile(url), [url]);
@@ -300,6 +302,11 @@ function App() {
   // Infos d'environnement (dossier, cookies, runtime JS) pour la ligne d'etat.
   useEffect(() => {
     invoke<EnvInfo>("get_env").then(setEnv).catch(() => {});
+  }, []);
+
+  // Numero de version affiche a cote du titre.
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => {});
   }, []);
 
   // macOS : CSS AccentColor ne suit pas l'OS dans WKWebView — on lit la couleur
@@ -431,6 +438,7 @@ function App() {
       <header className="titlebar" data-tauri-drag-region>
         <span className="titlebar__title" data-tauri-drag-region>
           Robloader
+          {appVersion && <span className="titlebar__version">{appVersion}</span>}
         </span>
 
         {!isMac && (
