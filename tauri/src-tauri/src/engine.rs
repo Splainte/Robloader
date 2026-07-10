@@ -517,13 +517,26 @@ fn run_proc<F: FnMut(&str)>(
         g.push_str(&chunk);
     });
 
-    // stdout ligne a ligne (progress).
-    let reader = BufReader::new(stdout);
-    for line in reader.lines().map_while(Result::ok) {
+    // stdout ligne a ligne (progress). Lecture en octets bruts + conversion
+    // tolerante : un lecteur UTF-8 strict (lines()) s'arretait a la premiere
+    // ligne non-UTF-8 (chemin accentue emis en cp1252 par yt-dlp) et fermait
+    // le tuyau — yt-dlp mourait alors en y ecrivant sa progression
+    // (OSError: [Errno 22]) : tout telechargement vers un dossier accentue
+    // (ex. « Téléchargements ») echouait.
+    let mut reader = BufReader::new(stdout);
+    let mut raw_line: Vec<u8> = Vec::new();
+    loop {
         if handle.cancelled() {
             break;
         }
-        on_line(&line);
+        raw_line.clear();
+        match reader.read_until(b'\n', &mut raw_line) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {
+                let line = String::from_utf8_lossy(&raw_line);
+                on_line(line.trim_end_matches(['\r', '\n']));
+            }
+        }
     }
 
     // Attente + recuperation du code.
