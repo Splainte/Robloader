@@ -23,3 +23,19 @@ Pistes retenues (cumulables, cf. `engine.rs` `install_update` + `App.tsx`) :
 
 Priorité : 1 + 2 ensemble (petit diff, couvre l'essentiel du problème perçu).
 Le 3 est optionnel.
+
+## S'adapter à la couleur d'accentuation du système (2026-07-11)
+
+Robloader devrait reprendre la couleur d'accentuation choisie par l'utilisateur
+dans les réglages système (macOS ET Windows), au lieu d'une couleur fixe
+codée en dur dans App.css. Actuellement KO sur Windows 11 (à vérifier aussi
+côté macOS, pas confirmé fonctionnel).
+
+Pistes à creuser :
+- **Windows** : `DwmGetColorizationColor` (API Win32) ou lecture du registre
+  `HKEY_CURRENT_USER\Software\Microsoft\Windows\DWM\AccentColor` côté Rust,
+  puis transmission au front (event Tauri) pour piloter une CSS var.
+- **macOS** : `NSColor.controlAccentColor` (AppKit) côté Rust/Swift, même
+  principe de transmission vers le front.
+- Prévoir un fallback (couleur actuelle par défaut) si la lecture échoue ou
+  sur les OS/versions non supportés.
