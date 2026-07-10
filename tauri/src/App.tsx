@@ -454,8 +454,8 @@ function App() {
               </svg>
             </button>
             <button className="winbtn winbtn--close" aria-label="Fermer" onClick={() => appWindow.close()}>
-              <svg width="11" height="11" viewBox="0 0 11 11">
-                <path d="M1.5 1.5 L9.5 9.5 M9.5 1.5 L1.5 9.5" stroke="currentColor" strokeWidth="1.1" />
+              <svg width="11" height="11" viewBox="0 0 11 11" style={{ shapeRendering: "geometricPrecision" }}>
+                <path d="M1.5 1.5 L9.5 9.5 M9.5 1.5 L1.5 9.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
               </svg>
             </button>
           </div>
