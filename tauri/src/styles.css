@@ -19,7 +19,7 @@
   --rl-control-active: rgba(0, 0, 0, 0.12);
   --rl-field: rgba(255, 255, 255, 0.7);
   --rl-field-hover: rgba(255, 255, 255, 0.85);
-  --rl-accent: AccentColor; /* mot-cle CSS systeme : exact + dynamique (WKWebView + WebView2) */
+  --rl-accent: AccentColor; /* repli seulement : ce mot-cle ne suit l'accent systeme ni dans WKWebView ni dans WebView2 — la vraie valeur est injectee par le backend */
   --rl-accent-text: #ffffff;
 
   /* Menu deroulant custom : fond quasi-opaque (lisible par-dessus Mica/Vibrancy) + ombre. */

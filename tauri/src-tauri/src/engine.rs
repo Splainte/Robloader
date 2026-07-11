@@ -1352,17 +1352,54 @@ fn run_pipeline_inner(
 }
 
 // ============================================================
-//  Couleur d'accent macOS (CSS AccentColor ne suit pas l'OS dans WKWebView)
+//  Couleur d'accent systeme (le mot-cle CSS `AccentColor` n'est fiable ni dans
+//  WKWebView ni dans WebView2 : on lit la vraie valeur cote OS)
 // ============================================================
 
-// Retourne la couleur d'accent exacte issue des Reglages macOS.
-// Les utilisateurs ne peuvent choisir que parmi 8 presets — la correspondance
-// entier → hex est donc exhaustive et exacte.
-// Sur les autres plateformes retourne None (CSS AccentColor gere Windows nativement).
+// Windows : lit un DWORD du registre (HKEY_CURRENT_USER) en FFI brut.
+#[cfg(windows)]
+fn hkcu_dword(subkey: &str, value: &str) -> Option<u32> {
+    extern "system" {
+        fn RegGetValueW(
+            hkey: isize,
+            sub_key: *const u16,
+            value: *const u16,
+            flags: u32,
+            typ: *mut u32,
+            data: *mut core::ffi::c_void,
+            data_len: *mut u32,
+        ) -> i32;
+    }
+    // HKEY est un handle (pointeur) : extension par ZEROS sur 64 bits. Passer
+    // par `as i32` sign-etendrait en 0xFFFFFFFF80000001 => handle invalide.
+    const HKEY_CURRENT_USER: isize = 0x8000_0001u32 as isize;
+    const RRF_RT_REG_DWORD: u32 = 0x0000_0010;
+
+    let wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
+    let (sk, v) = (wide(subkey), wide(value));
+    let mut data: u32 = 0;
+    let mut len: u32 = 4;
+    let rc = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            sk.as_ptr(),
+            v.as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            &mut data as *mut u32 as *mut core::ffi::c_void,
+            &mut len,
+        )
+    };
+    (rc == 0).then_some(data)
+}
+
+// Retourne la couleur d'accent exacte issue des reglages de l'OS.
+// macOS : 8 presets seulement — la correspondance entier → hex est exhaustive.
+// Windows : lecture du registre DWM (voir plus bas).
 // Async : lance `defaults` (un sous-processus) — hors du thread principal.
 #[tauri::command]
 pub async fn get_accent_color() -> Option<String> {
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", windows)))]
     return None;
 
     #[cfg(target_os = "macos")]
@@ -1384,6 +1421,23 @@ pub async fn get_accent_color() -> Option<String> {
             Some(6)  => "#ff2d55", // Rose
             _        => "#007aff", // Multicolore (clé absente) = Bleu
         }.to_string())
+    }
+
+    // Windows : le mot-cle CSS `AccentColor` ne reflete PAS l'accent systeme
+    // dans WebView2 (il rend un bleu par defaut) => on lit le registre.
+    //   DWM\AccentColor        : DWORD au format 0xAABBGGRR (ABGR, pas ARGB !)
+    //   DWM\ColorizationColor  : DWORD au format 0xAARRGGBB (ARGB) — repli
+    #[cfg(windows)]
+    {
+        if let Some(v) = hkcu_dword("Software\\Microsoft\\Windows\\DWM", "AccentColor") {
+            let (r, g, b) = (v & 0xFF, (v >> 8) & 0xFF, (v >> 16) & 0xFF);
+            return Some(format!("#{:02x}{:02x}{:02x}", r, g, b));
+        }
+        if let Some(v) = hkcu_dword("Software\\Microsoft\\Windows\\DWM", "ColorizationColor") {
+            let (r, g, b) = ((v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF);
+            return Some(format!("#{:02x}{:02x}{:02x}", r, g, b));
+        }
+        None
     }
 }
 
