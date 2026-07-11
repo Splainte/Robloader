@@ -309,14 +309,21 @@ function App() {
     getVersion().then(setAppVersion).catch(() => {});
   }, []);
 
-  // macOS : CSS AccentColor ne suit pas l'OS dans WKWebView — on lit la couleur
-  // exacte depuis le backend et on la relit a chaque regain de focus (= retour
-  // depuis les Reglages). Windows : CSS AccentColor est natif dans WebView2.
+  // Le mot-cle CSS `AccentColor` ne suit l'accent systeme ni dans WKWebView
+  // (macOS) ni dans WebView2 (Windows, ou il rend un bleu fixe) : on lit la
+  // couleur exacte depuis le backend, et on la relit a chaque regain de focus
+  // (= retour depuis les Reglages) pour suivre un changement a chaud.
   useEffect(() => {
-    if (!isMac) return;
     const applyAccent = () =>
       invoke<string | null>("get_accent_color").then((c) => {
-        if (c) document.documentElement.style.setProperty("--rl-accent", c);
+        if (!c) return;
+        const root = document.documentElement;
+        root.style.setProperty("--rl-accent", c);
+        // Texte pose SUR l'accent : noir si l'accent est clair (jaune...),
+        // sinon du blanc y serait illisible.
+        const [r, g, b] = [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+        const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+        root.style.setProperty("--rl-accent-text", lum > 0.6 ? "#000000" : "#ffffff");
       }).catch(() => {});
     applyAccent();
     const unlisten = appWindow.onFocusChanged(({ payload: focused }) => {
