@@ -25,6 +25,19 @@
   font-size: 13px;
 }
 
+/* Assombrissement du fond en mode sombre, macOS UNIQUEMENT (30%) : le Vibrancy
+   y est trop clair pour la lisibilite. Windows (Mica) garde son rendu d'origine
+   — ne pas etendre sans test sur Win11.
+   PAS de voile en pseudo-element : un ::before positionne se peindrait AU-DESSUS
+   des enfants en flux normal (titlebar, controles) et obscurcirait textes et
+   boutons. Le background d'un element est toujours peint DERRIERE ses enfants
+   => le contenu n'est pas affecte. Le rgba laisse passer le Vibrancy natif. */
+@media (prefers-color-scheme: dark) {
+  .app[data-os="macos"] {
+    background-color: rgba(0, 0, 0, 0.3);
+  }
+}
+
 /* Rayon des controles : macOS un peu plus arrondi, Windows 11 plus carre. */
 .app[data-os="macos"] {
   --rl-radius: 7px;
