@@ -807,6 +807,10 @@ fn check_cancel(handle: &TaskHandle) -> Result<(), String> {
 fn base_ytdlp_args(cmd: &mut Command, bins: &Bins, remote: bool) {
     cmd.arg("--no-playlist")
         .arg("--no-warnings")
+        // Force l'IPv4 : sur certains reseaux, la route IPv6 vers les serveurs
+        // video de Google (googlevideo.com) est cassee et provoque des
+        // « connect timeout » a repetition. IPv4 evite ce trou de routage.
+        .arg("--force-ipv4")
         .arg("--extractor-args")
         .arg(YOUTUBE_EXTRACTOR_ARGS)
         .arg("--ffmpeg-location")
