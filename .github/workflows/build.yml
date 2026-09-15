@@ -9,10 +9,13 @@ name: build
 #   - macOS   : Robloader_<ver>_universal.dmg       (Intel + Apple Silicon)
 #
 # macOS : on ne build PLUS sur runner Intel (macos-13, en retrait chez GitHub). A la place un
-# DMG universal2 est produit sur macos-14 (Apple Silicon) : binaires embarques fusionnes en
+# DMG universal2 est produit sur xcode-27 (macOS 26 + Xcode 27, Apple Silicon) : binaires embarques fusionnes en
 # fat binaries via lipo (cf prepare-bins.mjs, ROBLOADER_UNIVERSAL=1) + tauri build --target
 # universal-apple-darwin. Un seul DMG universal couvre les deux branches de l'updater
 # (aarch64 -> 1er .dmg ; Intel -> .dmg sans "aarch64").
+#
+# Xcode 27 : le look des fenetres (feux tricolores...) depend du SDK avec lequel l'app est
+# liee. Liee a un vieux SDK (Xcode 15 de macos-14), macOS 27 garde l'ancien design.
 on:
   push:
     tags: ['v*']
@@ -33,7 +36,7 @@ jobs:
             rust_target: ''
             tauri_args: ''
             glob: tauri/src-tauri/target/release/bundle/nsis/*-setup.exe
-          - platform: macos-14        # Apple Silicon -> DMG universal2 (Intel + ARM)
+          - platform: xcode-27        # Apple Silicon + SDK macOS 27 -> DMG universal2 (Intel + ARM)
             artifact: Robloader-macos
             universal: '1'
             rust_target: x86_64-apple-darwin
@@ -77,6 +80,14 @@ jobs:
       - name: Build Tauri (.dmg universal2 ou .exe)
         working-directory: tauri
         run: npm run tauri build ${{ matrix.tauri_args }}
+
+      - name: Verifier Xcode + SDK lie
+        if: runner.os == 'macOS'
+        working-directory: tauri
+        run: |
+          xcodebuild -version
+          xcrun --sdk macosx --show-sdk-version
+          vtool -show-build src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app/Contents/MacOS/Robloader
 
       - name: Collecter le livrable
         shell: bash
