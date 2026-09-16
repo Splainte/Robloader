@@ -1205,7 +1205,9 @@ fn build_ui(
         url_field.centerYAnchor().constraintEqualToAnchor(&url_capsule.centerYAnchor()),
     ];
     NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&capsule_constraints));
-    let max = url_capsule.widthAnchor().constraintLessThanOrEqualToConstant(900.0);
+    // Pas de plafond reel : la capsule absorbe toute la largeur libre, pour que
+    // Coller / Mise a jour / Telecharger restent colles a droite (plein ecran compris).
+    let max = url_capsule.widthAnchor().constraintLessThanOrEqualToConstant(100_000.0);
     max.setActive(true);
 
     let ui = Ui {
