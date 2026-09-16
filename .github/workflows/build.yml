@@ -74,6 +74,13 @@ jobs:
         working-directory: tauri
         run: npm run prepare-bins
 
+      # Le cache cargo restaure target/, y compris les installeurs des builds
+      # precedents : sans ce menage, l'artefact (et la Release) embarquerait
+      # aussi les anciennes versions.
+      - name: Supprimer les installeurs des builds precedents
+        shell: bash
+        run: rm -rf tauri/src-tauri/target/release/bundle tauri/src-tauri/target/universal-apple-darwin/release/bundle
+
       - name: Build Tauri (.dmg universal2 ou .exe)
         working-directory: tauri
         run: npm run tauri build ${{ matrix.tauri_args }}
