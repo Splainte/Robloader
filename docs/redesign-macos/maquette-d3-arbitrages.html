@@ -1,0 +1,2319 @@
+<meta charset="utf-8">
+<title>Maquette Robloader D3</title>
+<meta name="description" content="Maquette D3 de Robloader : les trois options encore à trancher">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* ---------- Page (banc d'essai) ---------- */
+:root {
+  --pg-ground: #eceef3;
+  --pg-panel: #ffffff;
+  --pg-ink: #1b1d23;
+  --pg-muted: #5d6270;
+  --pg-line: #d7dae2;
+  --pg-accent: #0a6cff;
+  --pg-accent-ink: #ffffff;
+  --pg-chip: #e3e7ef;
+  --ok: #1a7f45;
+  --mid: #9a5b00;
+  --bad: #b3261e;
+  --ok-bg: #dff3e6;
+  --mid-bg: #fbecd2;
+  --bad-bg: #f9dedb;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --pg-ground: #121418;
+    --pg-panel: #1b1e24;
+    --pg-ink: #eef0f5;
+    --pg-muted: #9aa0ad;
+    --pg-line: #2c3039;
+    --pg-accent: #4c9bff;
+    --pg-accent-ink: #0b1220;
+    --pg-chip: #262a33;
+    --ok: #5fd08a;
+    --mid: #f0b35a;
+    --bad: #ff8a80;
+    --ok-bg: #173323;
+    --mid-bg: #3a2c12;
+    --bad-bg: #3d1d1b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --pg-ground: #121418;
+  --pg-panel: #1b1e24;
+  --pg-ink: #eef0f5;
+  --pg-muted: #9aa0ad;
+  --pg-line: #2c3039;
+  --pg-accent: #4c9bff;
+  --pg-accent-ink: #0b1220;
+  --pg-chip: #262a33;
+  --ok: #5fd08a;
+  --mid: #f0b35a;
+  --bad: #ff8a80;
+  --ok-bg: #173323;
+  --mid-bg: #3a2c12;
+  --bad-bg: #3d1d1b;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--pg-ground);
+  color: var(--pg-ink);
+  font: 14px/1.5 "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  padding: 20px 20px 40px;
+}
+.wrap { max-width: 1440px; margin: 0 auto; display: grid; gap: 16px; }
+
+header.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+header.top h1 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; text-wrap: balance; }
+header.top p { margin: 0; color: var(--pg-muted); max-width: 70ch; }
+
+.controls {
+  display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center;
+  background: var(--pg-panel); border: 1px solid var(--pg-line); border-radius: 12px;
+  padding: 12px 14px;
+}
+.ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ctl > .lbl {
+  font: 500 11px/1 "Geist Mono", ui-monospace, monospace; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--pg-muted);
+}
+.seg { display: inline-flex; background: var(--pg-chip); border-radius: 8px; padding: 2px; gap: 2px; flex-wrap: wrap; }
+.seg button {
+  font: inherit; font-size: 13px; border: 0; background: transparent; color: var(--pg-ink);
+  padding: 5px 10px; border-radius: 6px; cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--pg-panel); box-shadow: 0 1px 2px rgba(0,0,0,.15); font-weight: 600; }
+.seg button:focus-visible, .variants button:focus-visible, input[type=range]:focus-visible { outline: 2px solid var(--pg-accent); outline-offset: 2px; }
+.slider { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--pg-muted); }
+.slider input { width: 160px; accent-color: var(--pg-accent); }
+
+.variants { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.variants button {
+  text-align: left; font: inherit; color: var(--pg-ink); cursor: pointer;
+  background: var(--pg-panel); border: 1px solid var(--pg-line); border-radius: 10px;
+  padding: 9px 12px; display: grid; gap: 2px;
+}
+.variants button .k { font: 500 11px/1.2 "Geist Mono", ui-monospace, monospace; color: var(--pg-muted); letter-spacing: 0.04em; }
+.variants button .n { font-weight: 600; font-size: 13.5px; }
+.variants button[aria-pressed="true"] { border-color: var(--pg-accent); box-shadow: inset 0 0 0 1px var(--pg-accent); }
+.variants button[aria-pressed="true"] .k { color: var(--pg-accent); }
+
+.bench { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .bench { grid-template-columns: 1fr; } }
+
+.notes {
+  background: var(--pg-panel); border: 1px solid var(--pg-line); border-radius: 12px;
+  padding: 16px; display: grid; gap: 12px;
+}
+.notes h2 { margin: 0; font-size: 17px; text-wrap: balance; }
+.notes p { margin: 0; color: var(--pg-muted); }
+.notes dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 10px; align-items: center; }
+.notes dt { font-size: 12.5px; color: var(--pg-muted); }
+.notes dd { margin: 0; justify-self: end; }
+.pill {
+  display: inline-block; font: 500 11.5px/1 "Geist Mono", ui-monospace, monospace;
+  padding: 5px 8px; border-radius: 999px; white-space: nowrap;
+}
+.pill.ok { color: var(--ok); background: var(--ok-bg); }
+.pill.mid { color: var(--mid); background: var(--mid-bg); }
+.pill.bad { color: var(--bad); background: var(--bad-bg); }
+.notes ul { margin: 0; padding-left: 18px; color: var(--pg-ink); display: grid; gap: 4px; font-size: 13px; }
+.notes .caveat { font-size: 12px; color: var(--pg-muted); border-top: 1px solid var(--pg-line); padding-top: 10px; }
+
+.stage-scroll { overflow-x: auto; border-radius: 14px; }
+.ctl[hidden] { display: none; }
+</style>
+<style>
+/* ---------- Bureau + fenetre simulee ---------- */
+.stage {
+  position: relative; min-width: 1120px; height: 760px; overflow: hidden; border-radius: 14px;
+  --t: 0.5;
+}
+.wall { position: absolute; inset: 0; transition: opacity .3s; }
+.wall.dunes {
+  background:
+    radial-gradient(60% 50% at 18% 20%, #7fd3ff 0%, transparent 60%),
+    radial-gradient(50% 60% at 85% 15%, #3a6bff 0%, transparent 65%),
+    radial-gradient(70% 55% at 70% 95%, #ffb86b 0%, transparent 60%),
+    radial-gradient(60% 50% at 10% 90%, #1bb39a 0%, transparent 60%),
+    linear-gradient(160deg, #0d3b7a, #1d7fb8 45%, #f0a35e);
+}
+.wall.coucher {
+  background:
+    radial-gradient(45% 40% at 75% 30%, #ffe08a 0%, transparent 60%),
+    radial-gradient(60% 60% at 20% 30%, #ff5f8f 0%, transparent 60%),
+    radial-gradient(70% 60% at 60% 100%, #6a3cff 0%, transparent 65%),
+    linear-gradient(200deg, #ff9a3c, #d63a7a 50%, #2a1f6e);
+}
+.wall.rayures {
+  background:
+    radial-gradient(circle at 30% 40%, #ffffff 0 60px, transparent 61px),
+    radial-gradient(circle at 72% 62%, #111 0 90px, transparent 91px),
+    repeating-linear-gradient(115deg, #ff4d4d 0 38px, #ffd23f 38px 76px, #3ec1ff 76px 114px, #1a1a2e 114px 152px);
+}
+
+.mock {
+  --text: #1c1c1e; --muted: rgba(28,28,30,.55); --stroke: rgba(0,0,0,.12); --stroke-strong: rgba(0,0,0,.22);
+  --control: rgba(0,0,0,.05); --field: rgba(255,255,255,.7); --surface: rgba(255,255,255,.45);
+  --accent: #0a84ff; --accent-text: #fff; --ok: #1a8a4a;
+  --vib: rgba(236,236,240,.74); --solid: #f3f3f6; --card: #ffffff; --card-line: rgba(0,0,0,.08);
+  --glass-rgb: 255,255,255; --glass-base: .10; --glass-gain: .62;
+  --spec: rgba(255,255,255,.75); --spec-soft: rgba(255,255,255,.18);
+  --folder-b: #3b8cf6; --folder-f: #6fb0ff;
+}
+.mock.dark {
+  --text: #f5f5f7; --muted: rgba(245,245,247,.55); --stroke: rgba(255,255,255,.12); --stroke-strong: rgba(255,255,255,.3);
+  --control: rgba(255,255,255,.07); --field: rgba(255,255,255,.07); --surface: rgba(255,255,255,.06);
+  --vib: rgba(30,30,34,.74); --solid: #1d1d20; --card: #262629; --card-line: rgba(255,255,255,.07);
+  --glass-rgb: 38,38,44; --glass-base: .14; --glass-gain: .66;
+  --spec: rgba(255,255,255,.38); --spec-soft: rgba(255,255,255,.08);
+  --folder-b: #2f76d8; --folder-f: #4d95f0;
+}
+
+.win {
+  position: absolute; width: 1060px; height: 680px; left: 30px; top: 40px;
+  border-radius: 18px; overflow: hidden; color: var(--text);
+  font: 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Geist", sans-serif;
+  box-shadow: 0 30px 80px rgba(0,0,0,.38), 0 0 0 .5px rgba(0,0,0,.35), inset 0 0 0 .5px rgba(255,255,255,.25);
+  user-select: none;
+}
+.base { position: absolute; inset: 0; }
+
+/* Materiaux */
+.vib { background: var(--vib); -webkit-backdrop-filter: blur(60px) saturate(1.6); backdrop-filter: blur(60px) saturate(1.6); }
+.solid { background: var(--solid); }
+.glass {
+  position: relative;
+  background: rgba(var(--glass-rgb), calc(var(--glass-base) + var(--t) * var(--glass-gain)));
+  -webkit-backdrop-filter: blur(calc(3px + var(--t) * 20px)) saturate(calc(1.9 - var(--t) * .6)) brightness(1.04);
+  backdrop-filter: blur(calc(3px + var(--t) * 20px)) saturate(calc(1.9 - var(--t) * .6)) brightness(1.04);
+  box-shadow: inset 0 1px 0 var(--spec), inset 0 -1px 0 var(--spec-soft), 0 6px 22px rgba(0,0,0,.14);
+}
+.glass::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: linear-gradient(135deg, var(--spec), transparent 35%, transparent 65%, var(--spec));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+.glass::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: radial-gradient(120% 90% at 15% -10%, var(--spec-soft), transparent 55%);
+}
+.glass.flat { box-shadow: inset 0 1px 0 var(--spec), inset 0 -1px 0 var(--spec-soft); }
+.glass > * { position: relative; z-index: 1; }
+
+/* Feux tricolores */
+.lights { display: flex; gap: 8px; padding-left: 14px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.25); }
+.lights i:nth-child(1) { background: #ff5f57; } .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+</style>
+<style>
+/* ---------- Piste D : chrome natif ---------- */
+.mock { --field2: rgba(255,255,255,.88); --control2: rgba(0,0,0,.07); --danger: #d70015; --green: #34c759; }
+.mock.dark { --field2: rgba(255,255,255,.1); --control2: rgba(255,255,255,.12); --danger: #ff453a; --green: #30d158; }
+.glass.thick { background: rgba(var(--glass-rgb), calc(.62 + var(--t) * .3)); }
+.mock button { font: inherit; color: inherit; }
+
+.toolbar { position: absolute; top: 0; left: 0; right: 0; height: 58px; display: flex; align-items: center; gap: 8px; padding-right: 12px; z-index: 20; }
+.toolbar .lights { padding-left: 18px; margin-right: 4px; }
+.tb-title { display: flex; flex-direction: column; line-height: 1.15; margin: 0 6px; min-width: 0; }
+.tb-title.one { flex-direction: row; align-items: baseline; gap: 6px; }
+.tb-title.one span { font-size: 12.5px; }
+.tb-title b { font-size: 15px; font-weight: 700; }
+.tb-title span { font-size: 11px; color: var(--muted); white-space: nowrap; display: flex; align-items: center; gap: 5px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+.dot.on { background: var(--green); }
+.tgrp { height: 36px; display: flex; align-items: center; padding: 0 4px; gap: 2px; border-radius: 999px; flex: 0 0 auto; }
+.tbtn {
+  height: 28px; min-width: 28px; padding: 0 8px; border-radius: 999px; border: 0; background: transparent;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; cursor: default;
+}
+.tbtn:hover { background: rgba(127,127,127,.16); }
+.tbtn:active, .tbtn[aria-expanded="true"] { background: rgba(127,127,127,.26); }
+.tbtn:disabled { opacity: .38; background: transparent; }
+.tbtn svg { width: 16px; height: 16px; flex: 0 0 auto; }
+.tgrp.tint { background: color-mix(in srgb, var(--accent) 86%, transparent); }
+.tgrp.tint .tbtn { color: #fff; font-weight: 600; padding: 0 14px; }
+.tgrp.tint .tbtn:hover { background: rgba(255,255,255,.14); }
+.tsearch, .turl { height: 36px; border-radius: 999px; display: flex; align-items: center; gap: 7px; padding: 0 12px; min-width: 0; }
+.tsearch { width: 200px; flex: 0 0 auto; }
+.turl { flex: 1; padding-right: 6px; }
+.tsearch input, .turl input { border: 0; background: transparent; outline: none; font: inherit; color: var(--text); width: 100%; min-width: 0; }
+.tsearch input::placeholder, .turl input::placeholder { color: var(--muted); }
+.tsearch svg, .turl svg { width: 14px; height: 14px; color: var(--muted); flex: 0 0 auto; }
+.chip { font-size: 11px; padding: 3px 8px; border-radius: 999px; white-space: nowrap; background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); font-weight: 600; }
+.mock.dark .chip { color: color-mix(in srgb, var(--accent) 55%, #fff); }
+.spacer { flex: 1; }
+.mock :focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 50%, transparent); }
+
+.edge { position: absolute; left: 0; right: 0; pointer-events: none; z-index: 10;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.edge.top { top: 0; height: 70px; -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent); }
+
+/* Menus, popovers, feuille */
+.menu { position: absolute; z-index: 50; min-width: 230px; padding: 5px; border-radius: 14px; font-size: 13px; }
+.mi { display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 10px; border-radius: 8px; cursor: default; width: 100%; border: 0; background: none; text-align: left; }
+.mi:hover:not(:disabled) { background: var(--accent); color: #fff; }
+.mi:hover .sc, .mi:hover .ms { color: rgba(255,255,255,.8); }
+.mi:disabled { opacity: .4; }
+.mi .ck { width: 12px; text-align: center; }
+.mi .sc { margin-left: auto; color: var(--muted); font-size: 12px; }
+.mi .ms { color: var(--muted); font-size: 11.5px; }
+.mi.danger { color: var(--danger); }
+.msep { height: 1px; background: var(--stroke); margin: 4px 8px; }
+.mh { font-size: 11px; color: var(--muted); padding: 5px 10px 3px; font-weight: 600; }
+.popover { position: absolute; z-index: 50; border-radius: 18px; padding: 14px 16px; width: 380px; }
+.popover h4 { margin: 0 0 6px; font-size: 13px; }
+.scrim { position: absolute; inset: 0; z-index: 40; }
+.scrim.dim { background: rgba(0,0,0,.14); }
+.sheet { position: absolute; left: 50%; top: 64px; transform: translateX(-50%); z-index: 45; width: 440px; border-radius: 24px; padding: 18px 20px; display: grid; gap: 14px; }
+.sheet h3 { margin: 0; font-size: 15px; }
+.sheet p { margin: 0; color: var(--muted); font-size: 12.5px; }
+.form { display: grid; grid-template-columns: 120px 1fr; gap: 8px 10px; align-items: center; }
+.form label { text-align: right; color: var(--muted); font-size: 12.5px; }
+.nf { height: 28px; border-radius: 8px; border: 0; background: var(--field2); box-shadow: inset 0 0 0 .5px var(--stroke-strong); padding: 0 10px; font: inherit; color: var(--text); outline: none; min-width: 0; }
+.nf:focus { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent), inset 0 0 0 1px var(--accent); }
+.actions { display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+.actions .note { margin-right: auto; font-size: 12px; color: var(--muted); }
+.pbtn { height: 28px; padding: 0 16px; border-radius: 999px; border: 0; background: var(--control2); cursor: default; white-space: nowrap; }
+.pbtn:hover { filter: brightness(1.06); }
+.pbtn.primary { background: var(--accent); color: #fff; font-weight: 600; }
+.pbtn:disabled { opacity: .5; }
+.spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(255,255,255,.45); border-top-color: #fff; display: inline-block; vertical-align: -2px; margin-right: 6px; }
+@media (prefers-reduced-motion: no-preference) {
+  .spin { animation: spin .8s linear infinite; }
+  .sheet { animation: sheetIn .22s ease-out; }
+  .menu, .popover { animation: pop .14s ease-out; transform-origin: top; }
+  .track i { transition: width .45s linear; }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes sheetIn { from { opacity: 0; transform: translate(-50%, -14px) scale(.98); } }
+@keyframes pop { from { opacity: 0; transform: scale(.96); } }
+.toast { position: absolute; left: 50%; bottom: 46px; transform: translateX(-50%); z-index: 60; padding: 8px 16px; border-radius: 999px; font-size: 12.5px; white-space: nowrap; }
+
+/* Icônes fichiers */
+.ic { width: 16px; height: 13px; flex: 0 0 auto; border-radius: 2px; position: relative; background: var(--folder-b); }
+.ic::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 9px; border-radius: 2px; background: var(--folder-f); }
+.ic.file { width: 12px; height: 15px; margin: 0 2px; background: var(--card); box-shadow: inset 0 0 0 1px var(--stroke-strong); }
+.ic.file::after { display: none; }
+.ic.vid { background: linear-gradient(#8e8ef8, #5b5bd6); box-shadow: none; }
+.ic.aud { background: linear-gradient(#ff7aa8, #e0457b); box-shadow: none; }
+.ic.img { background: linear-gradient(#5fd0a0, #1f9d6b); box-shadow: none; }
+
+/* Copiteur */
+.cp-body { position: absolute; left: 0; right: 0; top: 0; bottom: 30px; display: grid; grid-template-columns: 1fr 1px 1fr; }
+.cp-div { background: var(--stroke); }
+.cp-pane { position: relative; overflow-y: auto; padding-top: 58px; scrollbar-width: thin; outline: none; }
+.cp-pane.drop { background: color-mix(in srgb, var(--accent) 7%, transparent); box-shadow: inset 0 0 0 2px var(--accent); }
+.ph { display: flex; align-items: baseline; gap: 8px; padding: 8px 16px 2px; }
+.ph-title { font-weight: 700; font-size: 13px; }
+.cp-pane.active .ph-title { color: var(--accent); }
+.ph-state { font-size: 11.5px; color: var(--muted); }
+.path { display: flex; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); padding: 0 12px 6px; }
+.path button { border: 0; background: none; padding: 1px 4px; border-radius: 5px; cursor: default; color: var(--muted); }
+.path button:hover { background: var(--control); color: var(--text); }
+.path button:last-of-type { color: var(--text); font-weight: 600; }
+.th, .fr { display: grid; grid-template-columns: minmax(0,1fr) 78px 74px 92px; gap: 8px; align-items: center; }
+.th { height: 26px; padding: 0 22px; font-size: 11.5px; color: var(--muted); border-bottom: 1px solid var(--stroke); position: sticky; top: 58px; background: var(--solid); z-index: 2; }
+.th button { border: 0; background: none; padding: 0; text-align: left; color: inherit; cursor: default; }
+.th button.r { text-align: right; }
+.th button.on { color: var(--text); font-weight: 600; }
+.fr { height: 26px; font-size: 12.5px; margin: 0 8px; padding: 0 14px; border-radius: 6px; }
+.fr:nth-child(even) { background: var(--control); }
+.fr.sel { background: color-mix(in srgb, var(--accent) 22%, transparent) !important; }
+.cp-pane.active .fr.sel { background: var(--accent) !important; color: #fff; }
+.cp-pane.active .fr.sel .m { color: rgba(255,255,255,.82); }
+.fr span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.fr .m { color: var(--muted); font-variant-numeric: tabular-nums; }
+.fr .r { text-align: right; }
+.nm { display: flex; align-items: center; gap: 7px; }
+.rows { padding-top: 4px; }
+.empty { padding: 60px 30px; text-align: center; color: var(--muted); display: grid; gap: 10px; justify-items: center; }
+.empty b { color: var(--text); font-size: 14px; }
+.statusbar { position: absolute; left: 0; right: 0; bottom: 0; height: 30px; display: flex; align-items: center; gap: 10px; padding: 0 12px; font-size: 11.5px; background: var(--solid); border-top: 1px solid var(--stroke); color: var(--muted); z-index: 15; }
+.statusbar .sb-btn { border: 0; background: none; padding: 3px 8px; border-radius: 6px; display: flex; align-items: center; gap: 8px; color: var(--text); cursor: default; }
+.statusbar .sb-btn:hover { background: var(--control); }
+.track { width: 140px; height: 5px; border-radius: 3px; background: var(--stroke); overflow: hidden; flex: 0 0 auto; }
+.track i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.num { font-variant-numeric: tabular-nums; }
+.xr { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 4px 10px; padding: 8px 2px; border-bottom: 1px solid var(--stroke); font-size: 12.5px; }
+.xr:last-child { border-bottom: 0; }
+.xr .t { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.xr .s { color: var(--muted); font-size: 11.5px; }
+.xr .track { grid-column: 1 / -1; width: auto; }
+
+/* Robloader */
+.rl-scroll { position: absolute; inset: 0; overflow-y: auto; padding: 68px 18px 20px; scrollbar-width: thin; }
+.group { background: var(--card); border: 1px solid var(--card-line); border-radius: 12px; }
+.gr { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 6px 14px; border-bottom: 1px solid var(--stroke); flex-wrap: wrap; }
+.gr:last-child { border-bottom: 0; }
+.gl { font-weight: 500; }
+.gs { color: var(--muted); font-size: 12px; }
+.gv { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.switch {
+  width: 38px; height: 23px; border-radius: 999px; position: relative; border: 0; flex: 0 0 auto; cursor: default;
+  background: rgba(127,127,127,.20);
+  -webkit-backdrop-filter: blur(8px) saturate(1.5); backdrop-filter: blur(8px) saturate(1.5);
+  box-shadow: inset 0 0 0 .5px var(--stroke-strong), inset 0 1px 2px rgba(0,0,0,.14);
+}
+.switch::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(rgba(255,255,255,.30), rgba(255,255,255,.04) 55%, transparent);
+}
+.switch::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 19px; height: 19px; border-radius: 50%;
+  background: linear-gradient(#fff, #f1f1f4);
+  box-shadow: 0 1.5px 3px rgba(0,0,0,.34), 0 0 0 .5px rgba(0,0,0,.07), inset 0 1px 0 #fff;
+}
+.switch[aria-checked="true"] {
+  background: var(--accent);
+  box-shadow: inset 0 0 0 .5px color-mix(in srgb, var(--accent) 72%, #000), 0 2px 9px color-mix(in srgb, var(--accent) 42%, transparent);
+}
+.switch[aria-checked="true"]::after { transform: translateX(15px); }
+@media (prefers-reduced-motion: no-preference) {
+  .switch { transition: background .2s ease, box-shadow .2s ease; }
+  .switch::after { transition: transform .3s cubic-bezier(.34, 1.5, .64, 1); }
+}
+.popup { height: 24px; border-radius: 7px; border: 0; padding: 0 8px; background: var(--control2); display: inline-flex; align-items: center; gap: 6px; cursor: default; }
+.popup::after { content: "⌄"; font-size: 11px; color: var(--muted); transform: translateY(-2px); }
+.nf.time { width: 70px; text-align: center; height: 24px; }
+.sec { display: flex; align-items: center; justify-content: space-between; margin: 18px 4px 8px; }
+.sec h3 { margin: 0; font-size: 13px; }
+.sec .gs { margin-left: 8px; font-weight: 400; }
+.rbtn { height: 24px; padding: 0 11px; border-radius: 999px; border: 0; background: var(--control2); font-size: 12px; cursor: default; white-space: nowrap; }
+.rbtn:hover { filter: brightness(1.08); }
+.tk { display: grid; grid-template-columns: 56px minmax(0,1fr) auto; gap: 2px 12px; padding: 11px 14px; border-bottom: 1px solid var(--stroke); align-items: center; position: relative; min-height: 64px; }
+.tk:last-child { border-bottom: 0; }
+#rl-tasks { overflow: hidden; }
+.thumb { grid-row: 1 / span 2; width: 56px; aspect-ratio: 16 / 9; border-radius: 6px; position: relative; overflow: hidden; }
+.thumb::after { content: ""; position: absolute; left: 50%; top: 50%; transform: translate(-40%, -50%); border-left: 8px solid rgba(255,255,255,.9); border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
+.tk .tt { font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; grid-column: 2; }
+.tk .ts { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; grid-column: 2; }
+.tk .ts.ok { color: var(--ok); }
+.tk .ts.err { color: var(--danger); }
+.tk .ta { grid-column: 3; grid-row: 1 / span 2; display: flex; gap: 8px; align-items: center; }
+
+/* Progression : jamais dans le flux, donc la hauteur de ligne ne bouge pas */
+.prog { position: absolute; overflow: hidden; background: color-mix(in srgb, var(--text) 12%, transparent); }
+.prog i { display: block; height: 100%; width: calc(var(--p, 0) * 1%); background: var(--accent); border-radius: inherit; }
+@media (prefers-reduced-motion: no-preference) { .prog i { transition: width .3s linear; } }
+.tk[data-phase="tc"] .prog i { background: #af52de; }
+.mock.dark .tk[data-phase="tc"] .prog i { background: #bf5af2; }
+.tk[data-run="0"] .prog { visibility: hidden; }
+
+/* a) fil en bas de la ligne */
+.mock[data-bar="ligne"] .prog { left: 0; right: 0; bottom: 0; height: 3px; }
+/* b) sous la vignette */
+.mock[data-bar="vignette"] .prog { left: 14px; width: 56px; top: calc(50% + 20px); height: 3px; border-radius: 2px; }
+/* c) liserE sur la vignette */
+.mock[data-bar="sur-vignette"] .prog { left: 14px; width: 56px; top: calc(50% + 11px); height: 4px; background: rgba(0,0,0,.45); }
+/* d) anneau, sans barre */
+.mock[data-bar="anneau"] .prog { display: none; }
+.ring2 { display: none; width: 20px; height: 20px; border-radius: 50%; position: relative; flex: 0 0 auto;
+  background: conic-gradient(var(--accent) calc(var(--p, 0) * 1%), color-mix(in srgb, var(--text) 14%, transparent) 0); }
+.ring2::after { content: ""; position: absolute; inset: 3.5px; border-radius: 50%; background: var(--card); }
+.tk[data-phase="tc"] .ring2 { background: conic-gradient(#af52de calc(var(--p, 0) * 1%), color-mix(in srgb, var(--text) 14%, transparent) 0); }
+.mock[data-bar="anneau"] .tk[data-run="1"] .ring2 { display: block; }
+.empty-q { padding: 36px; text-align: center; color: var(--muted); }
+
+/* Reperage natif / HTML */
+.reveal [data-native] { outline: 2px dashed #0a84ff; outline-offset: 2px; }
+.reveal [data-html] { outline: 2px dashed #ff9f0a; outline-offset: -2px; }
+.legend { display: grid; gap: 6px; font-size: 12.5px; }
+.legend span { display: flex; align-items: center; gap: 8px; }
+.legend i { width: 18px; height: 12px; border-radius: 3px; border: 2px dashed; display: inline-block; }
+</style>
+
+<style>
+/* ---------- Variantes D : arborescence Copiteur ---------- */
+.cp-col { display: grid; grid-template-columns: 168px 1px minmax(0, 1fr); min-width: 0; min-height: 0; overflow: hidden; }
+.cp-col .th, .cp-col .fr { grid-template-columns: minmax(0, 1fr) 64px 84px; }
+.cp-col .th button:nth-child(2), .cp-col .fr > span:nth-child(2) { display: none; }
+.cp-col .th { padding: 0 18px; }
+.cp-col .fr { margin: 0 6px; padding: 0 12px; }
+.cp-col.nonav { grid-template-columns: 0 0 minmax(0, 1fr); }
+.cp-col.nonav .cp-nav { visibility: hidden; padding: 0; }
+.cp-split { background: var(--stroke); }
+.cp-nav { overflow-y: auto; padding: 62px 6px 12px; font-size: 12.5px; scrollbar-width: none; min-width: 0; }
+.cp-nav::-webkit-scrollbar, .side-float::-webkit-scrollbar { display: none; }
+.tsec { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; padding: 10px 8px 3px; }
+.tsec:first-child { padding-top: 2px; }
+.tr { display: flex; align-items: center; gap: 5px; width: 100%; height: 24px; border: 0; background: none; border-radius: 6px; padding-right: 6px; text-align: left; cursor: default; white-space: nowrap; }
+.tr:hover { background: var(--control); }
+.tr.cur { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.chev { width: 10px; flex: 0 0 auto; color: var(--muted); font-size: 12px; display: inline-block; text-align: center; }
+.chev.open { transform: rotate(90deg); }
+.tl { overflow: hidden; text-overflow: ellipsis; }
+.tr .ic { transform: scale(.92); }
+.drv { width: 15px; height: 11px; border-radius: 3px; flex: 0 0 auto; background: linear-gradient(#dcdee4, #a7abb6); box-shadow: inset 0 -2px 0 rgba(0,0,0,.14); }
+.drv.ext { background: linear-gradient(#ffb36b, #e0782a); }
+.drv.net { background: linear-gradient(#8fc3ff, #3d86e6); }
+.mock.dark .drv { background: linear-gradient(#8b8e97, #5b5e67); }
+.mock.dark .drv.ext { background: linear-gradient(#ff9d4d, #c0621c); }
+.mock.dark .drv.net { background: linear-gradient(#6aa8f5, #2f6fc4); }
+
+/* D2 : barre latérale flottante */
+.side-float { position: absolute; left: 8px; top: 8px; bottom: 38px; width: 228px; border-radius: 22px; z-index: 25; padding: 44px 8px 10px; overflow-y: auto; scrollbar-width: none; font-size: 12.5px; }
+.side-float > .lights { position: absolute; top: 15px; left: 4px; }
+.sside { display: flex; gap: 2px; margin: 0 2px 4px; background: rgba(127,127,127,.16); border-radius: 9px; padding: 2px; }
+.sbtn { flex: 1; height: 22px; border: 0; border-radius: 7px; background: none; font-size: 12px; cursor: default; }
+.sbtn[aria-pressed="true"] { background: var(--card); box-shadow: 0 1px 2px rgba(0,0,0,.18); font-weight: 600; }
+
+/* Anneau de progression (D4) */
+.ring { width: 20px; height: 20px; }
+.ring circle { fill: none; stroke-width: 2.2; }
+.ring .rt { stroke: var(--stroke-strong); }
+.ring .rp { stroke: var(--accent); stroke-dasharray: 50.27; transform: rotate(-90deg); transform-origin: 10px 10px; stroke-linecap: round; }
+.ring path { stroke: currentColor; stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+@media (prefers-reduced-motion: no-preference) { .ring .rp { transition: stroke-dashoffset .45s linear; } }
+
+/* Robloader D2 / D3 / D4 */
+.sum { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 2px 4px 0; }
+.sum .c2 { padding: 3px 9px; border-radius: 999px; background: var(--control2); color: var(--text); }
+.inspector { position: absolute; left: 10px; top: 66px; bottom: 10px; width: 292px; border-radius: 22px; padding: 14px 12px; overflow-y: auto; z-index: 12; scrollbar-width: none; display: flex; flex-direction: column; }
+.inspector > * { flex: 0 0 auto; }
+.inspector .gl.path { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.inspector .gr.dest-act { gap: 6px; }
+.inspector .gr.dest-act .rbtn { flex: 1; }
+.inspector .nf.time { flex: 0 0 auto; width: 72px; }
+.inspector h4 { margin: 16px 4px 6px; font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+.inspector h4:first-child { margin-top: 0; }
+.group.ing { background: rgba(var(--glass-rgb), .42); border-color: transparent; }
+.mock.dark .group.ing { background: rgba(255,255,255,.07); }
+.inspector .gr { min-height: 38px; flex-wrap: nowrap; }
+.coll { max-height: 0; opacity: 0; overflow: hidden; }
+.coll.open { max-height: 60px; opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .coll { transition: max-height .3s cubic-bezier(.32,.72,0,1), opacity .18s ease; }
+  .coll.open { transition: max-height .3s cubic-bezier(.32,.72,0,1), opacity .24s ease .06s; }
+}
+.qgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.qopt { height: 28px; border-radius: 9px; border: 0; background: rgba(127,127,127,.15); font-size: 12px; cursor: default; }
+.qopt[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
+.upd { margin: 14px 2px 0; border-radius: 14px; padding: 11px 12px; background: color-mix(in srgb, var(--accent) 14%, rgba(var(--glass-rgb), .5)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent); }
+.upd b { display: block; font-size: 12.5px; }
+.upd em { display: block; font-style: normal; font-size: 11.5px; color: var(--muted); margin: 1px 0 8px; }
+.upd .rbtn { width: 100%; height: 26px; background: var(--accent); color: #fff; font-weight: 600; }
+.insp-foot { margin: auto 4px 2px; padding-top: 10px; border-top: 1px solid var(--stroke); font-size: 11.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.qauto { font-size: 12px; color: var(--muted); padding: 2px 4px 0; }
+.tbtn .badge { width: 7px; height: 7px; border-radius: 50%; background: #ff9f0a; flex: 0 0 auto; }
+.accbar { position: absolute; left: 50%; transform: translateX(-50%); bottom: 16px; z-index: 12; border-radius: 999px; padding: 6px; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.tog { height: 28px; border-radius: 999px; border: 0; padding: 0 13px; background: rgba(127,127,127,.16); cursor: default; }
+.tog[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
+.accsep { width: 1px; height: 18px; background: var(--stroke-strong); margin: 0 2px; }
+.accbar .nf.time { height: 26px; border-radius: 999px; width: 64px; }
+.accbar .popup { height: 28px; border-radius: 999px; padding: 0 12px; background: rgba(127,127,127,.16); }
+.notes h3.nh { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--pg-muted); font-family: "Geist Mono", ui-monospace, monospace; font-weight: 500; }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>Robloader D3, maquette de référence</h1>
+    <p>Version définitive du 16 septembre : tous les choix sont faits. Progression en anneau près du bouton, fond plein derrière la file, interrupteurs à la couleur d'accent du système. C'est cette maquette qui sert de référence pour le chantier dans l'app.</p>
+  </header>
+
+  <div class="controls">
+    <div class="ctl" hidden><span class="lbl">App</span>
+      <div class="seg" id="seg-app" role="group" aria-label="Application">
+        <button type="button" data-v="copiteur" aria-pressed="true">Copiteur</button>
+        <button type="button" data-v="robloader" aria-pressed="false">Robloader</button>
+      </div>
+    </div>
+    <div class="ctl" hidden><span class="lbl">Variante</span>
+      <div class="seg" id="seg-var" role="group" aria-label="Variante"></div>
+    </div>
+    <div class="ctl"><span class="lbl">Apparence</span>
+      <div class="seg" id="seg-look" role="group" aria-label="Apparence de macOS">
+        <button type="button" data-v="light" aria-pressed="true">Clair</button>
+        <button type="button" data-v="dark" aria-pressed="false">Sombre</button>
+      </div>
+    </div>
+    <div class="ctl"><span class="lbl">Fond d'écran</span>
+      <div class="seg" id="seg-wall" role="group" aria-label="Fond d'écran">
+        <button type="button" data-v="dunes" aria-pressed="true">Dunes</button>
+        <button type="button" data-v="coucher" aria-pressed="false">Coucher</button>
+        <button type="button" data-v="rayures" aria-pressed="false">Rayures</button>
+      </div>
+    </div>
+    <div class="ctl"><label class="lbl" for="intensity">Liquid Glass</label>
+      <div class="slider"><span>Clair</span><input type="range" id="intensity" min="0" max="100" value="50"><span>Teinté</span></div>
+    </div>
+    <div class="ctl"><span class="lbl">Repérer</span>
+      <div class="seg" id="seg-reveal" role="group" aria-label="Repérer natif et HTML">
+        <button type="button" data-v="off" aria-pressed="true">Non</button>
+        <button type="button" data-v="on" aria-pressed="false">Natif / HTML</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="bench">
+    <div class="stage-scroll">
+      <div class="stage" id="stage">
+        <div class="wall dunes" id="wall"></div>
+        <div class="win mock" id="win"></div>
+      </div>
+    </div>
+    <aside class="notes" id="notes"></aside>
+  </div>
+</div>
+
+<script>
+/* ---------- Outils communs ---------- */
+const $ = (id) => document.getElementById(id);
+const win = $("win");
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+const svg = (d) => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const I = {
+  back: svg(`<path d="M10 3L5 8l5 5"/>`),
+  fwd: svg(`<path d="M6 3l5 5-5 5"/>`),
+  search: svg(`<circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>`),
+  gear: svg(`<circle cx="8" cy="8" r="2.3"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/>`),
+  journal: svg(`<rect x="3" y="2" width="10" height="12" rx="1.5"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/>`),
+  server: svg(`<rect x="2" y="2.5" width="12" height="4.5" rx="1.2"/><rect x="2" y="9" width="12" height="4.5" rx="1.2"/><path d="M4.6 4.75h.01M4.6 11.25h.01"/>`),
+  folder: svg(`<path d="M1.8 4.2c0-.7.5-1.2 1.2-1.2h3l1.5 1.5h5.5c.7 0 1.2.5 1.2 1.2v6.1c0 .7-.5 1.2-1.2 1.2H3c-.7 0-1.2-.5-1.2-1.2z"/>`),
+  folderPlus: svg(`<path d="M1.8 4.2c0-.7.5-1.2 1.2-1.2h3l1.5 1.5h5.5c.7 0 1.2.5 1.2 1.2v6.1c0 .7-.5 1.2-1.2 1.2H3c-.7 0-1.2-.5-1.2-1.2z"/><path d="M8 7v4M6 9h4"/>`),
+  link: svg(`<path d="M6.5 9.5l3-3M7 4.5l1-1a2.8 2.8 0 014 4l-1 1M9 11.5l-1 1a2.8 2.8 0 01-4-4l1-1"/>`),
+  paste: svg(`<rect x="3.5" y="3" width="9" height="11" rx="1.5"/><path d="M6 3V2h4v1M6 7h4M6 9.5h4"/>`),
+  download: svg(`<path d="M8 2v8M4.5 6.8L8 10.3l3.5-3.5M2.5 13.5h11"/>`),
+};
+const LIGHTS = `<span class="lights"><i></i><i></i><i></i></span>`;
+const plural = (n, word) => `${n} ${word}${n > 1 ? "s" : ""}`;
+
+function fmt(b) {
+  const f = (v, d) => v.toFixed(d).replace(".", ",");
+  if (b >= 1e9) return f(b / 1e9, 1) + " Go";
+  if (b >= 1e6) return f(b / 1e6, b >= 1e8 ? 0 : 1) + " Mo";
+  if (b >= 1e3) return Math.round(b / 1e3) + " Ko";
+  return b + " o";
+}
+function nowDate() {
+  const d = new Date(), p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/* Overlays natifs : menus, popovers, feuilles, toasts */
+function closeOverlays() {
+  win.querySelectorAll(".scrim, .menu, .popover, .sheet").forEach((e) => e.remove());
+  win.querySelectorAll('[aria-expanded="true"]').forEach((b) => b.setAttribute("aria-expanded", "false"));
+}
+function overlay(html, cls, { dim = false, anchor = null } = {}) {
+  closeOverlays();
+  const scrim = document.createElement("div");
+  scrim.className = "scrim" + (dim ? " dim" : "");
+  scrim.addEventListener("pointerdown", closeOverlays);
+  win.append(scrim);
+  const el = document.createElement("div");
+  el.className = cls;
+  el.setAttribute("data-native", "");
+  el.innerHTML = html;
+  win.append(el);
+  if (anchor) anchor.setAttribute("aria-expanded", "true");
+  return el;
+}
+function placeAt(el, x, y) {
+  el.style.left = Math.max(8, Math.min(x, win.clientWidth - el.offsetWidth - 8)) + "px";
+  el.style.top = Math.max(8, Math.min(y, win.clientHeight - el.offsetHeight - 8)) + "px";
+}
+function placeUnder(el, anchor, { right = false, above = false } = {}) {
+  const r = anchor.getBoundingClientRect(), w = win.getBoundingClientRect();
+  const x = right ? r.right - w.left - el.offsetWidth : r.left - w.left;
+  const y = above ? r.top - w.top - el.offsetHeight - 8 : r.bottom - w.top + 6;
+  placeAt(el, x, y);
+}
+function menuHTML(items) {
+  return items.map((it) => {
+    if (it.sep) return `<div class="msep"></div>`;
+    if (it.head) return `<div class="mh">${it.head}</div>`;
+    return `<button type="button" class="mi${it.danger ? " danger" : ""}" data-id="${esc(it.id)}"${it.disabled ? " disabled" : ""}>
+      <span class="ck">${it.ck ? "✓" : ""}</span><span>${esc(it.label)}</span>${it.ms ? `<span class="ms">${esc(it.ms)}</span>` : ""}${it.sc ? `<span class="sc">${it.sc}</span>` : ""}</button>`;
+  }).join("");
+}
+function bindMenu(el, onPick) {
+  el.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-id]");
+    if (!b || b.disabled) return;
+    closeOverlays();
+    onPick(b.dataset.id);
+  });
+}
+function menu(anchor, items, onPick, opts = {}) {
+  const el = overlay(menuHTML(items), "menu glass thick", { anchor });
+  placeUnder(el, anchor, opts);
+  bindMenu(el, onPick);
+  return el;
+}
+function ctxMenu(x, y, items, onPick) {
+  const el = overlay(menuHTML(items), "menu glass thick");
+  placeAt(el, x, y);
+  bindMenu(el, onPick);
+}
+function popover(anchor, html, opts = {}) {
+  const el = overlay(html, "popover glass thick", { anchor });
+  placeUnder(el, anchor, opts);
+  return el;
+}
+function sheet(html) {
+  return overlay(html, "sheet glass thick", { dim: true });
+}
+let toastTimer = null;
+function toast(msg) {
+  win.querySelector(".toast")?.remove();
+  const t = document.createElement("div");
+  t.className = "toast glass thick";
+  t.setAttribute("data-native", "");
+  t.textContent = msg;
+  win.append(t);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.remove(), 2400);
+}
+
+/* ---------- Copiteur : données ---------- */
+const T = "Macintosh HD/Utilisateurs/robin/Vidéos/Tests";
+const FS_L = {
+  "Macintosh HD": [["Applications", null, "02/09 10:00"], ["Bibliothèque", null, "14/09 08:12"], ["Utilisateurs", null, "01/09 09:00"]],
+  "Macintosh HD/Utilisateurs": [["Partagé", null, "01/09 09:00"], ["robin", null, "15/09 09:12"]],
+  "Macintosh HD/Utilisateurs/robin": [["Bureau", null, "15/09 13:40"], ["Documents", null, "14/09 17:02"], ["Musique", null, "03/09 09:15"], ["Téléchargements", null, "15/09 12:31"], ["Vidéos", null, "15/09 14:22"]],
+  "Macintosh HD/Utilisateurs/robin/Vidéos": [["Archives 2025", null, "31/12 18:00"], ["Shorts", null, "13/09 21:12"], ["Tests", null, "15/09 14:22"], ["Générique Frandroid 2026.mov", 240e6, "01/09 12:00"]],
+  [T]: [
+    ["Rushs Pixel 10 Pro", null, "15/09 09:12"], ["Miniatures", null, "14/09 18:40"], ["Musiques libres", null, "02/09 11:03"], ["Exports 4K", null, "12/09 22:17"],
+    ["Test Galaxy S26 Ultra – montage v3.mov", 18.2e9, "15/09 14:22"], ["Test Galaxy S26 Ultra – montage v2.mov", 17.9e9, "15/09 11:05"],
+    ["B-roll labo batterie.mp4", 3.4e9, "14/09 16:48"], ["Interview Xiaomi.wav", 812e6, "13/09 10:30"], ["Voix off v2.wav", 96.4e6, "15/09 08:55"],
+    ["Miniature S26.psd", 412e6, "14/09 19:02"], ["Sous-titres FR.srt", 42e3, "15/09 13:10"], ["script-test-S26.docx", 38e3, "11/09 09:41"],
+    ["Plan de tournage.pdf", 1.2e6, "10/09 15:20"], ["Pixel 10 Pro – plans produit.mov", 6.7e9, "09/09 17:36"], ["Logo animé.mov", 58e6, "01/09 12:02"],
+    ["Musique intro.mp3", 7.8e6, "03/09 09:15"], ["Checklist tournage.txt", 3e3, "08/09 08:20"], ["Capture écran One UI 9.png", 4.1e6, "12/09 10:44"],
+    ["Capture écran Android 17.png", 3.9e6, "12/09 10:46"], ["Export Shorts 9-16.mp4", 880e6, "13/09 21:12"], ["Archive rushs août.zip", 42.6e9, "31/08 23:50"],
+  ],
+  [T + "/Rushs Pixel 10 Pro"]: Array.from({ length: 14 }, (_, i) => [`A001_C0${String(i + 1).padStart(2, "0")}_0915.mov`, (2.1 + (i * 0.37) % 4) * 1e9, `15/09 09:${String(10 + i).padStart(2, "0")}`]),
+};
+const FS_R = {
+  "/volume1": [["frandroid", null, "15/09 07:45"], ["homes", null, "01/09 09:00"], ["public", null, "20/08 12:00"]],
+  "/volume1/frandroid": [["archives", null, "31/08 23:58"], ["livraisons", null, "15/09 14:31"], ["rushs", null, "15/09 09:30"]],
+  "/volume1/frandroid/livraisons": [["2026-07", null, "31/07 20:00"], ["2026-08", null, "31/08 20:00"], ["2026-09", null, "15/09 14:31"]],
+  "/volume1/frandroid/livraisons/2026-09": [
+    ["Débrief", null, "12/09 10:20"], ["Projets Premiere", null, "15/09 07:45"],
+    ["Test Galaxy S26 Ultra – montage v3.mov", 11.3e9, "15/09 14:31"], ["Test OnePlus 15 – master.mov", 14.8e9, "11/09 19:04"],
+    ["Nothing Phone (4) – démontage.mov", 9.2e9, "10/09 16:12"], ["Keynote Apple – résumé.mov", 7.5e9, "10/09 02:18"],
+    ["Miniature OnePlus 15.jpg", 2.8e6, "11/09 18:30"], ["Sous-titres OnePlus 15 FR.srt", 39e3, "11/09 19:40"],
+    ["Z Fold8 – prise en main.mov", 5.1e9, "09/09 20:05"], ["Pixel 10 Pro – master.mov", 16.2e9, "08/09 22:47"],
+    ["Écouteurs à moins de 100 € – master.mov", 8.9e9, "06/09 18:00"], ["Xiaomi 17 Ultra – master.mov", 13.4e9, "05/09 21:33"],
+    ["Voix off OnePlus 15.wav", 102e6, "11/09 17:02"], ["README livraison.txt", 2e3, "01/09 09:00"],
+    ["Charte miniatures 2026.pdf", 6.4e6, "01/09 09:05"], ["Shorts semaine 37.zip", 2.2e9, "14/09 12:10"], ["Shorts semaine 36.zip", 2.0e9, "07/09 12:04"],
+  ],
+  "/share/Multimedia": [["Films", null, "10/09 21:00"], ["Photos", null, "14/09 19:30"], ["Rushs Gabin", null, "15/09 10:02"], ["Sauvegarde MacBook.sparsebundle", 212e9, "15/09 03:00"]],
+  "/share/Public": [["Partage équipe", null, "12/09 16:40"], ["Logos Frandroid.zip", 84e6, "02/09 11:11"]],
+};
+
+function kindOf(r) {
+  if (r[1] === null) return "d";
+  const ext = r[0].split(".").pop().toLowerCase();
+  if (["mov", "mp4", "mkv"].includes(ext)) return "v";
+  if (["wav", "mp3", "m4a"].includes(ext)) return "a";
+  if (["png", "jpg", "psd"].includes(ext)) return "i";
+  return "f";
+}
+function typeOf(r) {
+  const ext = r[0].split(".").pop().toLowerCase();
+  const map = { mov: "Vidéo", mp4: "Vidéo", wav: "Audio", mp3: "Audio", png: "Image", jpg: "Image", psd: "Photoshop", pdf: "PDF", txt: "Texte", srt: "Sous-titres", zip: "Archive", docx: "Word", sparsebundle: "Image disque" };
+  return r[1] === null ? "Dossier" : map[ext] || "Document";
+}
+const ICON_CLASS = { d: "ic", v: "ic file vid", a: "ic file aud", i: "ic file img", f: "ic file" };
+
+const CP = {
+  connected: true,
+  server: "Seedbox Frandroid",
+  servers: [
+    { name: "Seedbox Frandroid", host: "sftp.frandroid-prod.fr", root: "/volume1/frandroid/livraisons/2026-09" },
+    { name: "NAS Brightwood", host: "brightwood.local", root: "/share/Public" },
+    { name: "QNAP Gabin", host: "qnap-gabin.myqnapcloud.com", root: "/share/Multimedia" },
+  ],
+  active: "local",
+  path: { local: T.split("/"), remote: ["/volume1", "frandroid", "livraisons", "2026-09"] },
+  hist: { local: { back: [], fwd: [] }, remote: { back: [], fwd: [] } },
+  sel: { local: new Set(["Test Galaxy S26 Ultra – montage v2.mov"]), remote: new Set() },
+  sort: { local: ["name", 1], remote: ["name", 1] },
+  scroll: { local: 0, remote: 0 },
+  q: "",
+  anchor: null,
+  speed: 88e6,
+  recent: [],
+  xfers: [
+    { name: "Test Galaxy S26 Ultra – montage v3.mov", size: 18.2e9, done: 11.3e9, to: "remote", dest: "/volume1/frandroid/livraisons/2026-09" },
+    { name: "Voix off v2.wav", size: 96.4e6, done: 0, to: "remote", dest: "/volume1/frandroid/livraisons/2026-09" },
+    { name: "Miniature S26.psd", size: 412e6, done: 0, to: "remote", dest: "/volume1/frandroid/livraisons/2026-09" },
+  ],
+  pendingDel: null,
+};
+</script>
+
+<script>
+/* ---------- Copiteur : rendu ---------- */
+const cpKey = (side) => CP.path[side].join("/");
+function cpList(side) {
+  const fs = side === "local" ? FS_L : FS_R;
+  const key = cpKey(side);
+  if (!fs[key]) fs[key] = [];
+  return fs[key];
+}
+function cpRows(side) {
+  const q = CP.q.trim().toLowerCase();
+  const [col, dir] = CP.sort[side];
+  const dateKey = (s) => s.slice(3, 5) + s.slice(0, 2) + s.slice(6);
+  const val = (r) => col === "name" ? r[0].toLowerCase() : col === "type" ? typeOf(r) : col === "size" ? (r[1] ?? -1) : dateKey(r[2]);
+  return cpList(side)
+    .filter((r) => !q || r[0].toLowerCase().includes(q))
+    .sort((a, b) => ((a[1] === null ? 0 : 1) - (b[1] === null ? 0 : 1)) || (val(a) > val(b) ? 1 : val(a) < val(b) ? -1 : 0) * dir);
+}
+
+function cpPaneHTML(side) {
+  const active = CP.active === side ? " active" : "";
+  if (side === "remote" && !CP.connected) {
+    return `<div class="cp-pane${active}" data-side="remote" data-html>
+      <div class="ph"><span class="ph-title">Serveur</span><span class="ph-state">Déconnecté</span></div>
+      <div class="empty"><b>Aucun serveur connecté</b><span>Choisis un serveur dans la barre d'outils, ou crée une connexion.</span>
+      <button type="button" class="pbtn primary" data-act="new-conn">Nouvelle connexion…</button></div></div>`;
+  }
+  const title = side === "local" ? "Ton PC" : "Serveur";
+  const state = side === "local" ? "Macintosh HD · 412 Go disponibles" : `${esc(CP.server)} · SFTP`;
+  const crumbs = CP.path[side].map((p, i) => `${i ? `<span aria-hidden="true">›</span>` : ""}<button type="button" data-crumb="${i}">${esc(p)}</button>`).join("");
+  const [col, dir] = CP.sort[side];
+  const head = [["name", "Nom"], ["type", "Type"], ["size", "Taille"], ["date", "Modifié"]]
+    .map(([k, l]) => `<button type="button" data-sort="${k}" class="${k === "size" ? "r " : ""}${k === col ? "on" : ""}">${l}${k === col ? (dir > 0 ? " ↑" : " ↓") : ""}</button>`).join("");
+  const rows = cpRows(side);
+  const body = rows.length
+    ? rows.map((r) => `<div class="fr${CP.sel[side].has(r[0]) ? " sel" : ""}" draggable="true" data-name="${esc(r[0])}">
+        <span class="nm"><i class="${ICON_CLASS[kindOf(r)]}"></i><span>${esc(r[0])}</span></span>
+        <span class="m">${typeOf(r)}</span><span class="m r">${r[1] === null ? "—" : fmt(r[1])}</span><span class="m">${r[2]}</span></div>`).join("")
+    : `<div class="empty">${CP.q ? `<b>Aucun résultat</b><span>Rien ne correspond à « ${esc(CP.q)} » dans ce dossier.</span>` : `<b>Dossier vide</b><span>Glisse des fichiers ici depuis l'autre panneau.</span>`}</div>`;
+  return `<div class="cp-pane${active}" data-side="${side}" tabindex="0" data-html>
+    <div class="ph"><span class="ph-title">${title}</span><span class="ph-state">${state}</span></div>
+    <div class="path">${crumbs}</div>
+    <div class="th">${head}</div>
+    <div class="rows">${body}</div></div>`;
+}
+
+function cpToolbarHTML() {
+  const h = CP.hist[CP.active];
+  const sub = CP.connected ? `<i class="dot on"></i>${esc(CP.server)} · connecté` : `<i class="dot"></i>Aucun serveur`;
+  return `<div class="toolbar" data-drag data-native>
+    ${LIGHTS}
+    <div class="glass tgrp">
+      <button type="button" class="tbtn" data-act="back" aria-label="Précédent"${h.back.length ? "" : " disabled"}>${I.back}</button>
+      <button type="button" class="tbtn" data-act="fwd" aria-label="Suivant"${h.fwd.length ? "" : " disabled"}>${I.fwd}</button>
+    </div>
+    <div class="tb-title"><b>Copiteur</b><span>${sub}</span></div>
+    <div class="spacer" data-drag></div>
+    <div class="glass tgrp"><button type="button" class="tbtn" data-act="servers" aria-haspopup="menu">${I.server}${CP.connected ? esc(CP.server) : "Serveurs"}<span style="color:var(--muted)">⌄</span></button></div>
+    ${CP.connected
+      ? `<div class="glass tgrp"><button type="button" class="tbtn" data-act="connect">Déconnecter</button></div>`
+      : `<div class="glass tgrp tint"><button type="button" class="tbtn" data-act="connect">Se connecter…</button></div>`}
+    <div class="glass tgrp">
+      <button type="button" class="tbtn" data-act="newfolder" aria-label="Nouveau dossier" title="Nouveau dossier">${I.folderPlus}</button>
+      <button type="button" class="tbtn" data-act="journal" aria-label="Journal" title="Journal">${I.journal}</button>
+      <button type="button" class="tbtn" data-act="settings" aria-label="Paramètres de transfert" title="Paramètres de transfert">${I.gear}</button>
+    </div>
+    <label class="glass tsearch">${I.search}<input id="cp-q" type="search" placeholder="Rechercher" value="${esc(CP.q)}" aria-label="Rechercher dans les deux panneaux"></label>
+  </div>`;
+}
+
+function cpStatus() {
+  const total = CP.xfers.reduce((a, x) => a + x.size, 0);
+  const done = CP.xfers.reduce((a, x) => a + x.done, 0);
+  if (!CP.xfers.length) return { pct: 0, text: CP.recent.length ? `Terminé · ${plural(CP.recent.length, "fichier")} envoyé${CP.recent.length > 1 ? "s" : ""}` : "Aucun transfert en cours" };
+  const pct = Math.floor((done / total) * 100);
+  return { pct, text: `${plural(CP.xfers.length, "transfert")} · ${pct} % · reste ${fmt(total - done)} · ${fmt(CP.speed)}/s` };
+}
+function cpHTML() {
+  const st = cpStatus();
+  return `${cpToolbarHTML()}
+    <div class="edge top" style="height:58px"></div>
+    <div class="cp-body" id="cp-body">${cpPaneHTML("local")}<div class="cp-div"></div>${cpPaneHTML("remote")}</div>
+    <div class="statusbar" data-html>
+      <button type="button" class="sb-btn" data-act="xfers" aria-haspopup="dialog"><span class="track"><i id="cp-track" style="width:${st.pct}%"></i></span><span id="cp-xtext" class="num">${st.text}</span></button>
+      <span style="margin-left:auto">Moteur rclone custom</span>
+    </div>`;
+}
+function cpAfterRender() {
+  win.querySelectorAll(".cp-pane").forEach((p) => { p.scrollTop = CP.scroll[p.dataset.side] || 0; });
+}
+function cpRefreshBody() {
+  const body = $("cp-body");
+  if (!body) return;
+  body.innerHTML = cpPaneHTML("local") + `<div class="cp-div"></div>` + cpPaneHTML("remote");
+  cpAfterRender();
+}
+function cpPatchSel() {
+  win.querySelectorAll(".cp-pane").forEach((p) => {
+    const side = p.dataset.side;
+    p.classList.toggle("active", side === CP.active);
+    p.querySelectorAll(".fr").forEach((r) => r.classList.toggle("sel", CP.sel[side].has(r.dataset.name)));
+  });
+  const h = CP.hist[CP.active];
+  const b = win.querySelector('[data-act="back"]'), f = win.querySelector('[data-act="fwd"]');
+  if (b) b.disabled = !h.back.length;
+  if (f) f.disabled = !h.fwd.length;
+}
+function cpPatchStatus() {
+  const st = cpStatus();
+  if ($("cp-track")) $("cp-track").style.width = st.pct + "%";
+  if ($("cp-xtext")) $("cp-xtext").textContent = st.text;
+  if ($("xpop")) $("xpop").innerHTML = xpopBody();
+}
+function xpopBody() {
+  const rows = CP.xfers.map((x, i) => `<div class="xr"><span class="t">${esc(x.name)}</span>
+    <span class="s num">${i < 3 ? Math.floor((x.done / x.size) * 100) + " % · " + fmt(x.size - x.done) : "En attente"}</span>
+    <span class="track"><i style="width:${(x.done / x.size) * 100}%"></i></span></div>`).join("");
+  const rec = CP.recent.slice(0, 3).map((n) => `<div class="xr"><span class="t">${esc(n)}</span><span class="s" style="color:var(--ok)">Terminé</span></div>`).join("");
+  return `<h4>Transferts</h4>${rows || rec ? rows + rec : `<p class="s" style="margin:0;color:var(--muted)">Aucun transfert. Glisse des fichiers d'un panneau à l'autre.</p>`}`;
+}
+
+/* ---------- Copiteur : actions ---------- */
+function navigate(side, path, push = true) {
+  const h = CP.hist[side];
+  if (push) { h.back.push(CP.path[side]); h.fwd = []; }
+  CP.path[side] = path;
+  CP.sel[side].clear();
+  CP.scroll[side] = 0;
+  CP.active = side;
+  render();
+}
+function startTransfer(from, names) {
+  if (!CP.connected) { toast("Connecte-toi d'abord à un serveur"); return; }
+  const to = from === "local" ? "remote" : "local";
+  const list = cpList(from);
+  names.forEach((n) => {
+    const r = list.find((x) => x[0] === n);
+    if (r) CP.xfers.push({ name: n, size: r[1] ?? 12.4e9, done: 0, to, dest: cpKey(to), folder: r[1] === null });
+  });
+  toast(`${plural(names.length, "élément")} envoyé${names.length > 1 ? "s" : ""} vers ${to === "remote" ? "le serveur" : "ton PC"}`);
+  cpPatchStatus();
+}
+function cpTick() {
+  const running = CP.xfers.slice(0, 3);
+  running.forEach((x) => {
+    x.done = Math.min(x.size, x.done + Math.max(x.size / 90, 45e6));
+  });
+  CP.speed = running.length ? 72e6 + Math.random() * 30e6 : 0;
+  const finished = CP.xfers.filter((x) => x.done >= x.size);
+  if (finished.length) {
+    CP.xfers = CP.xfers.filter((x) => x.done < x.size);
+    let visible = false;
+    finished.forEach((x) => {
+      const fs = x.to === "remote" ? FS_R : FS_L;
+      const list = fs[x.dest] || (fs[x.dest] = []);
+      const existing = list.find((r) => r[0] === x.name);
+      if (existing) { existing[1] = x.folder ? null : x.size; existing[2] = nowDate(); }
+      else list.push([x.name, x.folder ? null : x.size, nowDate()]);
+      CP.recent.unshift(x.name);
+      if (cpKey(x.to) === x.dest) visible = true;
+    });
+    if (visible && S.app === "copiteur" && !win.querySelector(".fr input")) cpRefreshBody();
+  }
+  if (S.app === "copiteur") cpPatchStatus();
+}
+function cpRename(side, name) {
+  const row = [...win.querySelectorAll(`.cp-pane[data-side="${side}"] .fr`)].find((r) => r.dataset.name === name);
+  if (!row) return;
+  const span = row.querySelector(".nm span");
+  const input = document.createElement("input");
+  input.className = "nf";
+  input.style.cssText = "height:20px;width:100%;padding:0 6px";
+  input.value = name;
+  span.replaceWith(input);
+  row.draggable = false;
+  input.focus();
+  const dot = name.lastIndexOf(".");
+  input.setSelectionRange(0, dot > 0 && cpList(side).find((r) => r[0] === name)?.[1] !== null ? dot : name.length);
+  let done = false;
+  const commit = (ok) => {
+    if (done) return;
+    done = true;
+    const v = input.value.trim();
+    if (ok && v && v !== name) {
+      const r = cpList(side).find((x) => x[0] === name);
+      if (r) r[0] = v;
+      CP.sel[side] = new Set([v]);
+    }
+    cpRefreshBody();
+  };
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") commit(true); if (e.key === "Escape") { e.stopPropagation(); commit(false); } });
+  input.addEventListener("blur", () => commit(true));
+}
+function cpNewFolder(side) {
+  if (side === "remote" && !CP.connected) side = "local";
+  const list = cpList(side);
+  let name = "Nouveau dossier", i = 2;
+  while (list.some((r) => r[0] === name)) name = `Nouveau dossier ${i++}`;
+  list.push([name, null, nowDate()]);
+  CP.sel[side] = new Set([name]);
+  CP.active = side;
+  cpRefreshBody();
+  cpRename(side, name);
+}
+function cpDelete(side, names) {
+  if (!names.length) return;
+  const list = cpList(side);
+  const total = names.reduce((a, n) => a + (list.find((r) => r[0] === n)?.[1] ?? 12.4e9), 0);
+  CP.pendingDel = { side, names };
+  sheet(`<h3>Supprimer ${names.length > 1 ? plural(names.length, "élément") : `« ${esc(names[0])} »`} ?</h3>
+    <p>${side === "remote" ? "Sur le serveur, la suppression est définitive." : "Les éléments partent à la Corbeille."} Poids total : <b>${fmt(total)}</b>.</p>
+    <div class="actions"><button type="button" class="pbtn" data-act="sheet-cancel">Annuler</button>
+    <button type="button" class="pbtn primary" style="background:var(--danger)" data-act="del-ok">Supprimer</button></div>`);
+}
+function cpConnectSheet() {
+  const el = sheet(`<h3>Nouvelle connexion</h3>
+    <p>SFTP, FTP ou WebDAV. Le mot de passe est rangé dans le trousseau de macOS.</p>
+    <div class="form">
+      <label for="f-name">Nom</label><input class="nf" id="f-name" value="Studio Lyon">
+      <label for="f-host">Hôte</label><input class="nf" id="f-host" value="nas-studio-lyon.fr">
+      <label for="f-user">Utilisateur</label><input class="nf" id="f-user" value="montage">
+      <label for="f-pass">Mot de passe</label><input class="nf" id="f-pass" type="password" value="motdepasse">
+      <label for="f-port">Port</label><input class="nf" id="f-port" value="22" style="width:70px">
+      <span></span><span style="display:flex;align-items:center;gap:8px"><button type="button" class="switch" role="switch" aria-checked="true" data-act="toggle" id="f-save" aria-label="Mémoriser ce serveur"></button>Mémoriser ce serveur</span>
+    </div>
+    <div class="actions"><span class="note">Démarrer dans : /share/Multimedia</span>
+      <button type="button" class="pbtn" data-act="sheet-cancel">Annuler</button>
+      <button type="button" class="pbtn primary" data-act="sheet-connect">Se connecter</button></div>`);
+  el.querySelector("#f-host").focus();
+}
+function cpConnectTo(server) {
+  toast(`Connexion à ${server.name}…`);
+  setTimeout(() => {
+    CP.connected = true;
+    CP.server = server.name;
+    CP.path.remote = ["/" + server.root.split("/")[1], ...server.root.split("/").slice(2)];
+    CP.hist.remote = { back: [], fwd: [] };
+    CP.sel.remote.clear();
+    CP.scroll.remote = 0;
+    if (S.app === "copiteur") render();
+    toast(`Connecté à ${server.name}`);
+  }, 900);
+}
+
+const JOURNAL = `<h4>Journal</h4>
+  <div style="font:11.5px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);display:grid">
+    <span>19:42:03  Connexion SFTP sftp.frandroid-prod.fr:22 · OK</span>
+    <span>19:42:04  Départ dans /volume1/frandroid/livraisons/2026-09</span>
+    <span>19:43:11  Envoi « Test Galaxy S26 Ultra – montage v3.mov » · 16 flux</span>
+    <span>19:43:12  Écriture directe (Inplace) activée</span>
+    <span>19:44:50  2 fichiers en file d'attente</span>
+  </div>
+  <div class="actions" style="margin-top:12px"><button type="button" class="pbtn" data-act="journal-copy">Copier</button><button type="button" class="pbtn" data-act="journal-open">Ouvrir le dossier</button></div>`;
+const SETTINGS = `<h4>Paramètres de transfert</h4>
+  <div class="group" style="margin-top:8px">
+    <div class="gr"><span class="gl">Transferts simultanés</span><span class="gv"><button type="button" class="popup" data-act="noop">4</button></span></div>
+    <div class="gr"><span class="gl">Flux par fichier (SFTP)</span><span class="gv"><button type="button" class="popup" data-act="noop">16</button></span></div>
+    <div class="gr"><span class="gl">Limite de débit</span><span class="gv gs">Aucune</span></div>
+    <div class="gr"><span class="gl">Fichiers cachés</span><span class="gv"><button type="button" class="switch" role="switch" aria-checked="false" data-act="toggle" aria-label="Fichiers cachés"></button></span></div>
+    <div class="gr"><span class="gl">Lecteurs réseau</span><span class="gv"><button type="button" class="switch" role="switch" aria-checked="false" data-act="toggle" aria-label="Lecteurs réseau"></button></span></div>
+  </div>`;
+
+function cpAction(act, el) {
+  const side = CP.active;
+  if (act === "back" || act === "fwd") {
+    const h = CP.hist[side];
+    const from = act === "back" ? h.back : h.fwd, to = act === "back" ? h.fwd : h.back;
+    if (!from.length) return;
+    to.push(CP.path[side]);
+    navigate(side, from.pop(), false);
+  } else if (act === "servers") {
+    menu(el, [
+      { head: "Serveurs enregistrés" },
+      ...CP.servers.map((s) => ({ id: "srv:" + s.name, label: s.name, ms: s.host, ck: CP.connected && CP.server === s.name })),
+      { sep: 1 },
+      { id: "new", label: "Nouvelle connexion…", sc: "⌘N" },
+      { id: "manage", label: "Gérer les serveurs…" },
+    ], (id) => {
+      if (id.startsWith("srv:")) cpConnectTo(CP.servers.find((s) => "srv:" + s.name === id));
+      else if (id === "new") cpConnectSheet();
+      else toast("Gestion des serveurs : renommer, dossier de départ, supprimer");
+    });
+  } else if (act === "connect") {
+    if (CP.connected) { CP.connected = false; CP.xfers = CP.xfers.filter((x) => x.to !== "remote"); render(); toast(`Déconnecté de ${CP.server}`); }
+    else cpConnectSheet();
+  } else if (act === "new-conn") cpConnectSheet();
+  else if (act === "newfolder") cpNewFolder(side);
+  else if (act === "journal") popover(el, JOURNAL, { right: true });
+  else if (act === "settings") popover(el, SETTINGS, { right: true });
+  else if (act === "xfers") { const p = popover(el, xpopBody(), { above: true }); p.id = "xpop"; placeUnder(p, el, { above: true }); }
+  else if (act === "journal-copy") { closeOverlays(); toast("Journal copié dans le presse-papiers"); }
+  else if (act === "journal-open") { closeOverlays(); toast("Ouverture du dossier des journaux dans le Finder"); }
+  else if (act === "sheet-cancel") closeOverlays();
+  else if (act === "del-ok") {
+    const { side: s, names } = CP.pendingDel;
+    const fs = s === "local" ? FS_L : FS_R;
+    fs[cpKey(s)] = cpList(s).filter((r) => !names.includes(r[0]));
+    CP.sel[s].clear();
+    closeOverlays();
+    cpRefreshBody();
+    toast(`${plural(names.length, "élément")} supprimé${names.length > 1 ? "s" : ""}`);
+  } else if (act === "sheet-connect") {
+    el.disabled = true;
+    el.innerHTML = `<span class="spin"></span>Connexion…`;
+    const name = $("f-name").value.trim() || $("f-host").value.trim();
+    const server = { name, host: $("f-host").value.trim(), root: "/share/Multimedia" };
+    const save = $("f-save").getAttribute("aria-checked") === "true";
+    setTimeout(() => {
+      if (save && !CP.servers.some((s) => s.name === name)) CP.servers.push(server);
+      closeOverlays();
+      CP.connected = true;
+      CP.server = name;
+      CP.path.remote = ["/share", "Multimedia"];
+      CP.hist.remote = { back: [], fwd: [] };
+      CP.active = "remote";
+      render();
+      toast(`Connecté à ${name}`);
+    }, 1100);
+  }
+}
+
+function cpOpen(side, name) {
+  const r = cpList(side).find((x) => x[0] === name);
+  if (!r) return;
+  if (r[1] === null) navigate(side, [...CP.path[side], r[0]]);
+  else toast(side === "local" ? `Ouverture de « ${name} »` : `Copie temporaire puis ouverture de « ${name} »`);
+}
+
+let DRAG = null;
+win.addEventListener("click", (e) => {
+  if (S.app !== "copiteur") return;
+  const act = e.target.closest("[data-act]");
+  if (act) { if (act.dataset.act !== "toggle") cpAction(act.dataset.act, act); return; }
+  const pane = e.target.closest(".cp-pane");
+  if (!pane) return;
+  const side = pane.dataset.side;
+  const crumb = e.target.closest("[data-crumb]");
+  if (crumb) { const i = Number(crumb.dataset.crumb); if (i < CP.path[side].length - 1) navigate(side, CP.path[side].slice(0, i + 1)); return; }
+  const sortB = e.target.closest("[data-sort]");
+  if (sortB) { const [c, d] = CP.sort[side]; CP.sort[side] = [sortB.dataset.sort, c === sortB.dataset.sort ? -d : 1]; cpRefreshBody(); return; }
+  CP.active = side;
+  const row = e.target.closest(".fr");
+  const sel = CP.sel[side];
+  if (row && !row.querySelector("input")) {
+    const n = row.dataset.name;
+    if (e.metaKey || e.ctrlKey) { sel.has(n) ? sel.delete(n) : sel.add(n); }
+    else if (e.shiftKey && CP.anchor) {
+      const names = [...pane.querySelectorAll(".fr")].map((r) => r.dataset.name);
+      const [a, b] = [names.indexOf(CP.anchor), names.indexOf(n)].sort((x, y) => x - y);
+      if (a >= 0) names.slice(a, b + 1).forEach((x) => sel.add(x));
+    } else { sel.clear(); sel.add(n); }
+    CP.anchor = n;
+  } else if (!row) sel.clear();
+  cpPatchSel();
+});
+win.addEventListener("dblclick", (e) => {
+  if (S.app !== "copiteur") return;
+  const row = e.target.closest(".fr");
+  if (row && !row.querySelector("input")) cpOpen(row.closest(".cp-pane").dataset.side, row.dataset.name);
+});
+win.addEventListener("contextmenu", (e) => {
+  if (S.app !== "copiteur") return;
+  const pane = e.target.closest(".cp-pane");
+  if (!pane || !pane.querySelector(".rows")) return;
+  e.preventDefault();
+  const side = pane.dataset.side;
+  CP.active = side;
+  const row = e.target.closest(".fr");
+  if (row && !CP.sel[side].has(row.dataset.name)) { CP.sel[side] = new Set([row.dataset.name]); }
+  if (!row) CP.sel[side].clear();
+  cpPatchSel();
+  const names = [...CP.sel[side]];
+  const w = win.getBoundingClientRect();
+  const other = side === "local" ? "le serveur" : "ton PC";
+  const items = row ? [
+    { id: "open", label: "Ouvrir", sc: "↩" },
+    { id: "copy", label: `Copier vers ${other}`, disabled: !CP.connected },
+    { sep: 1 },
+    { id: "rename", label: "Renommer…", disabled: names.length !== 1 },
+    { id: "size", label: "Calculer la taille" },
+    { id: "pin", label: "Épingler dans le fil d'Ariane" },
+    { sep: 1 },
+    { id: "delete", label: names.length > 1 ? `Supprimer ${names.length} éléments` : "Supprimer", danger: 1, sc: "⌘⌫" },
+  ] : [
+    { id: "newfolder", label: "Nouveau dossier", sc: "⇧⌘N" },
+    { id: "refresh", label: "Actualiser", sc: "⌘R" },
+  ];
+  ctxMenu(e.clientX - w.left, e.clientY - w.top, items, (id) => {
+    if (id === "open") cpOpen(side, names[0]);
+    else if (id === "copy") startTransfer(side, names);
+    else if (id === "rename") cpRename(side, names[0]);
+    else if (id === "size") { const tot = names.reduce((a, n) => a + (cpList(side).find((r) => r[0] === n)?.[1] ?? 48.3e9), 0); toast(`Taille : ${fmt(tot)}`); }
+    else if (id === "pin") toast(`« ${names[0]} » épinglé`);
+    else if (id === "delete") cpDelete(side, names);
+    else if (id === "newfolder") cpNewFolder(side);
+    else if (id === "refresh") { cpRefreshBody(); toast("Dossier actualisé"); }
+  });
+});
+win.addEventListener("input", (e) => {
+  if (S.app !== "copiteur" || e.target.id !== "cp-q") return;
+  CP.q = e.target.value;
+  cpRefreshBody();
+});
+win.addEventListener("scroll", (e) => {
+  const p = e.target;
+  if (p.classList && p.classList.contains("cp-pane")) CP.scroll[p.dataset.side] = p.scrollTop;
+}, true);
+win.addEventListener("dragstart", (e) => {
+  if (S.app !== "copiteur") return;
+  const row = e.target.closest && e.target.closest(".fr");
+  if (!row) return;
+  const side = row.closest(".cp-pane").dataset.side;
+  if (!CP.sel[side].has(row.dataset.name)) { CP.sel[side] = new Set([row.dataset.name]); CP.active = side; cpPatchSel(); }
+  DRAG = { side, names: [...CP.sel[side]] };
+  e.dataTransfer.effectAllowed = "copy";
+  e.dataTransfer.setData("text/plain", DRAG.names.join("\n"));
+});
+win.addEventListener("dragover", (e) => {
+  const pane = e.target.closest && e.target.closest(".cp-pane");
+  if (!DRAG || !pane || pane.dataset.side === DRAG.side) return;
+  e.preventDefault();
+  pane.classList.add("drop");
+});
+win.addEventListener("dragleave", (e) => {
+  const pane = e.target.closest && e.target.closest(".cp-pane");
+  if (pane && !pane.contains(e.relatedTarget)) pane.classList.remove("drop");
+});
+win.addEventListener("drop", (e) => {
+  const pane = e.target.closest && e.target.closest(".cp-pane");
+  if (!DRAG || !pane) return;
+  e.preventDefault();
+  pane.classList.remove("drop");
+  startTransfer(DRAG.side, DRAG.names);
+  DRAG = null;
+});
+win.addEventListener("dragend", () => { DRAG = null; win.querySelectorAll(".drop").forEach((p) => p.classList.remove("drop")); });
+
+function cpKey2(e) {
+  if (e.target.closest("input")) return false;
+  const side = CP.active, sel = CP.sel[side];
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") { cpRows(side).forEach((r) => sel.add(r[0])); cpPatchSel(); return true; }
+  if (e.key === "Backspace" || e.key === "Delete") { cpDelete(side, [...sel]); return true; }
+  if (e.key === "Enter" && sel.size === 1) { cpRename(side, [...sel][0]); return true; }
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    const names = cpRows(side).map((r) => r[0]);
+    const cur = names.indexOf(CP.anchor);
+    const next = names[Math.max(0, Math.min(names.length - 1, cur + (e.key === "ArrowDown" ? 1 : -1)))];
+    if (next) { CP.sel[side] = new Set([next]); CP.anchor = next; cpPatchSel(); }
+    return true;
+  }
+  return false;
+}
+</script>
+
+<script>
+/* ---------- Robloader ---------- */
+const SOURCES = [[/youtu\.?be/, "YouTube"], [/instagram\.com/, "Instagram"], [/tiktok\.com/, "TikTok"], [/(^|\/\/|\.)(x|twitter)\.com/, "X"], [/vimeo\.com/, "Vimeo"]];
+const sourceOf = (u) => (SOURCES.find(([re]) => re.test(u)) || [])[1] || "";
+const CLIPS = [
+  ["https://www.youtube.com/watch?v=q8Nothing4", "On a démonté le Nothing Phone (4)"],
+  ["https://www.instagram.com/reel/C9frandroidS26/", "Reel · Galaxy S26 Ultra en 30 secondes"],
+  ["https://www.tiktok.com/@frandroid/video/7412", "TikTok · 3 astuces cachées d'Android 17"],
+  ["https://www.youtube.com/watch?v=Apple2026Key", "Keynote Apple septembre 2026 : résumé en 12 minutes"],
+];
+const QUALITIES = ["Qualité max (jusqu'à 4K)", "1440p (QHD)", "1080p (Full HD)", "720p (HD)", "480p"];
+const OUTPUTS_NATIVE = ["Vidéo (natif)", "Audio WAV", "Sous-titres seuls (.srt)"];
+const OUTPUTS_TRANSCODE = ["HEVC", "ProRes", "Audio WAV", "Sous-titres seuls (.srt)"];
+let OUTPUTS = OUTPUTS_NATIVE;
+function rlSyncOutput() {
+  OUTPUTS = RL.transcode ? OUTPUTS_TRANSCODE : OUTPUTS_NATIVE;
+  if (!OUTPUTS.includes(RL.output)) RL.output = OUTPUTS[0];
+  const b = win.querySelector('[data-act="output"]');
+  if (b) b.textContent = RL.output;
+}
+const RUNNING = ["wait", "probe", "dl", "tc"];
+
+const RL = {
+  url: "https://www.youtube.com/watch?v=f9Rq2Kp10Pro",
+  quality: "1080p (Full HD)", output: "Vidéo (natif)", dest: "~/Movies/Robloader",
+  clip: false, start: "00:45", end: "02:10", transcode: false, subs: true, thumb: false,
+  paste: -1, nextId: 20, scroll: 0, sig: "",
+  tasks: [
+    { id: 1, title: "Test du Pixel 10 Pro : le meilleur photophone de l'année ?", phase: "dl", p: 64, size: 1.3e9, fmt: "1080p", hue: 210, speed: 12.3e6 },
+    { id: 2, title: "Galaxy Z Fold8 : prise en main · extrait 00:45 → 02:10", phase: "tc", p: 31, size: 220e6, fmt: "HEVC", hue: 280, transcode: true },
+    { id: 9, title: "Android 17 : les 10 nouveautés à connaître", phase: "wait", p: 0, size: 640e6, fmt: "1080p", hue: 100 },
+    { id: 3, title: "iPhone 17 Pro vs Galaxy S26 Ultra : le comparatif", phase: "done", p: 100, size: 1.2e9, fmt: "1080p", hue: 20 },
+    { id: 4, title: "Keynote Apple septembre 2026 : résumé en 12 minutes", phase: "done", p: 100, size: 3.8e9, fmt: "4K", hue: 0 },
+    { id: 5, title: "Test OnePlus 15 : la charge 120 W en conditions réelles", phase: "err", p: 0, size: 960e6, fmt: "1080p", hue: 140, msg: "vidéo réservée aux membres · cookies requis" },
+    { id: 6, title: "Les meilleurs écouteurs à moins de 100 €", phase: "done", p: 100, size: 48e6, fmt: "WAV", hue: 330 },
+    { id: 7, title: "Xiaomi 17 Ultra : le test complet", phase: "done", p: 100, size: 1.1e9, fmt: "1080p", hue: 45 },
+  ],
+};
+
+function rlStatus(t) {
+  if (t.phase === "wait") return "En attente";
+  if (t.phase === "probe") return "Analyse du lien…";
+  if (t.phase === "dl") return `Téléchargement ${Math.floor(t.p)} % · ${fmt(t.speed || 10e6)}/s · reste ${Math.max(1, Math.ceil((100 - t.p) / 5))} s`;
+  if (t.phase === "tc") return `Transcodage ${Math.floor(t.p)} % · ${t.fmt}`;
+  if (t.phase === "done") return `Terminé · ${t.fmt} · ${fmt(t.size)}`;
+  if (t.phase === "err") return `Échec : ${t.msg}`;
+  return "Annulé";
+}
+function rlTaskHTML(t) {
+  const track = t.phase === "dl" || t.phase === "tc";
+  const cls = t.phase === "done" ? " ok" : t.phase === "err" ? " err" : "";
+  const btn = RUNNING.includes(t.phase) ? ["t-cancel", "Annuler"] : t.phase === "done" ? ["t-show", "Afficher"] : t.phase === "err" ? ["t-retry", "Réessayer"] : ["t-retry", "Relancer"];
+  return `<div class="tk" data-id="${t.id}" data-phase="${t.phase}" data-run="${track ? 1 : 0}" style="--p:${track ? t.p : 0}">
+    <span class="thumb" style="background:linear-gradient(135deg,hsl(${t.hue} 70% 58%),hsl(${(t.hue + 40) % 360} 60% 32%))"></span>
+    <span class="tt">${esc(t.title)}</span>
+    <span class="ts${cls}">${rlStatus(t)}</span>
+    <span class="prog"><i></i></span>
+    <span class="ta"><span class="ring2"></span><button type="button" class="rbtn" data-act="${btn[0]}" data-tid="${t.id}">${btn[1]}</button></span>
+  </div>`;
+}
+function rlRefreshTasks() {
+  const box = $("rl-tasks");
+  if (!box) return;
+  const sig = RL.tasks.map((t) => t.id + ":" + t.phase).join(",");
+  if (sig !== RL.sig) {
+    RL.sig = sig;
+    box.innerHTML = RL.tasks.length ? RL.tasks.map(rlTaskHTML).join("") : `<div class="empty-q">Aucun téléchargement pour l'instant. Colle un lien dans la barre d'outils.</div>`;
+  } else {
+    RL.tasks.forEach((t) => {
+      const el = box.querySelector(`[data-id="${t.id}"]`);
+      if (!el) return;
+      el.querySelector(".ts").textContent = rlStatus(t);
+      const run = t.phase === "dl" || t.phase === "tc";
+      el.dataset.phase = t.phase;
+      el.dataset.run = run ? "1" : "0";
+      el.style.setProperty("--p", run ? t.p : 0);
+    });
+  }
+  const n = RL.tasks.filter((t) => RUNNING.includes(t.phase)).length;
+  if ($("rl-count")) $("rl-count").textContent = n ? `${n} en cours` : "";
+}
+
+const sw = (key, label) => `<button type="button" class="switch" role="switch" aria-checked="${RL[key]}" data-rl="${key}" aria-label="${label}"></button>`;
+function rlOptsHTML() {
+  return `
+    <div class="gr"><span class="gl">Extraire un passage</span><span class="gv">${sw("clip", "Extraire un passage")}</span></div>
+    <div class="coll${RL.clip ? " open" : ""}" id="rl-clip"><div class="gr"><label class="gs" for="rl-start">Début</label><input class="nf time" id="rl-start" value="${esc(RL.start)}">
+      <label class="gs" for="rl-end">Fin</label><input class="nf time" id="rl-end" value="${esc(RL.end)}">
+</div></div>
+    <div class="gr"><span class="gl">Transcodage</span><span class="gv">${sw("transcode", "Transcodage")}</span></div>
+    <div class="coll${RL.transcode ? " open" : ""}" id="rl-out"><div class="gr"><span class="gl">Format de sortie</span><span class="gv"><button type="button" class="popup" data-act="output" aria-haspopup="menu">${RL.output}</button></span></div></div>
+    <div class="gr"><span class="gl">Sous-titres (.srt)</span><span class="gv">${sw("subs", "Sous-titres")}</span></div>
+    <div class="gr"><span class="gl">Miniature</span><span class="gv">${sw("thumb", "Miniature")}</span></div>`;
+}
+function rlHTML() {
+  const chip = sourceOf(RL.url);
+  RL.sig = "";
+  return `<div class="toolbar" data-drag data-native>
+      ${LIGHTS}
+      <div class="tb-title"><b>Robloader</b><span>2.1.7 · cookies Chrome ✓</span></div>
+      <label class="glass turl">${I.link}
+        <input id="rl-url" type="text" value="${esc(RL.url)}" placeholder="Colle un lien YouTube, Instagram, TikTok…" aria-label="Lien de la vidéo" spellcheck="false">
+        <span id="rl-chip">${chip ? `<span class="chip">${chip}</span>` : ""}</span>
+        <button type="button" class="tbtn" data-act="paste" aria-label="Coller le lien" title="Coller">${I.paste}</button>
+      </label>
+      <div class="glass tgrp"><button type="button" class="tbtn" data-act="quality" aria-haspopup="menu">${RL.quality}<span style="color:var(--muted)">⌄</span></button></div>
+      <div class="glass tgrp"><button type="button" class="tbtn" data-act="dest" aria-label="Destination" title="Destination">${I.folder}</button></div>
+      <div class="glass tgrp tint"><button type="button" class="tbtn" data-act="download">${I.download}Télécharger</button></div>
+    </div>
+    <div class="edge top" style="height:62px"></div>
+    <div class="rl-scroll" id="rl-scroll" data-html>
+      <div class="group" id="rl-opts">${rlOptsHTML()}</div>
+      <div style="font-size:11.5px;color:var(--muted);margin:8px 6px 0">Destination : ${RL.dest} · cookies Chrome ✓ · 4K disponible (Deno présent)</div>
+      <div class="sec"><h3>File de téléchargements<span class="gs" id="rl-count"></span></h3><button type="button" class="rbtn" data-act="clear">Nettoyer la liste</button></div>
+      <div class="group" id="rl-tasks"></div>
+    </div>`;
+}
+function rlAfterRender() {
+  rlRefreshTasks();
+  const sc = $("rl-scroll");
+  if (sc) sc.scrollTop = RL.scroll;
+}
+function rlTick() {
+  let active = 0;
+  RL.tasks.forEach((t) => {
+    if (t.phase === "probe") { t.probe = (t.probe || 0) + 1; if (t.probe >= 3) { t.phase = "dl"; t.p = 0; } }
+    else if (t.phase === "dl") {
+      t.p = Math.min(100, t.p + 2 + Math.random() * 3);
+      t.speed = 8e6 + Math.random() * 9e6;
+      if (t.p >= 100) { t.phase = t.transcode ? "tc" : "done"; t.p = t.transcode ? 0 : 100; }
+    } else if (t.phase === "tc") { t.p = Math.min(100, t.p + 3); if (t.p >= 100) t.phase = "done"; }
+    if (["probe", "dl", "tc"].includes(t.phase)) active++;
+  });
+  const waiting = RL.tasks.slice().reverse().find((t) => t.phase === "wait");
+  if (waiting && active < 2) { waiting.phase = "probe"; waiting.probe = 0; }
+  if (S.app === "robloader") rlRefreshTasks();
+}
+function rlSetUrl(u) {
+  RL.url = u;
+  const input = $("rl-url");
+  if (input && input.value !== u) input.value = u;
+  const s = sourceOf(u);
+  if ($("rl-chip")) $("rl-chip").innerHTML = s ? `<span class="chip">${s}</span>` : "";
+  const insp = win.querySelector(".inspector");
+  if (insp) insp.innerHTML = rlInspInner();
+}
+function rlDownload() {
+  const url = RL.url.trim();
+  if (!url) { toast("Colle d'abord un lien dans la barre d'outils"); $("rl-url")?.focus(); return; }
+  const known = CLIPS.find((c) => c[0] === url);
+  const base = known ? known[1] : url.includes("f9Rq2Kp10Pro") ? "Test du Pixel 10 Pro : le meilleur photophone de l'année ?" : "Vidéo · " + url.replace(/^https?:\/\/(www\.)?/, "").slice(0, 46);
+  const audio = RL.output.startsWith("M4A");
+  RL.tasks.unshift({
+    id: RL.nextId++,
+    title: RL.clip ? `${base} · extrait ${RL.start} → ${RL.end}` : base,
+    phase: "probe", p: 0, probe: 0,
+    size: audio ? 52e6 : 4e8 + Math.random() * 1.2e9,
+    fmt: audio ? "M4A" : `${RL.output.split(" ")[0]} ${RL.quality.replace(/ .*/, "").replace("Meilleure", "max")}`,
+    hue: Math.floor(Math.random() * 360),
+    transcode: RL.transcode,
+  });
+  rlSetUrl("");
+  rlRefreshTasks();
+  toast("Ajouté à la file de téléchargements");
+}
+function rlAction(act, el) {
+  const tid = Number(el.dataset.tid);
+  const t = RL.tasks.find((x) => x.id === tid);
+  if (act === "paste") { RL.paste = (RL.paste + 1) % CLIPS.length; rlSetUrl(CLIPS[RL.paste][0]); toast("Lien collé depuis le presse-papiers"); }
+  else if (act === "download") rlDownload();
+  else if (act === "quality") {
+    menu(el, [...QUALITIES.map((q) => ({ id: q, label: q, ck: q === RL.quality })), { sep: 1 }, { id: "audio", label: "Audio seul (M4A)", ck: RL.output.startsWith("M4A") }], (id) => {
+      if (id === "audio") RL.output = "M4A (audio)";
+      else { RL.quality = id; if (RL.output.startsWith("M4A")) RL.output = "MP4 (H.264)"; }
+      render();
+    });
+  } else if (act === "output") {
+    menu(el, OUTPUTS.map((o) => ({ id: o, label: o, ck: o === RL.output })), (id) => { RL.output = id; rlOptsChanged(); });
+  } else if (act === "dest") {
+    popover(el, `<h4>Dossier de destination</h4>
+      <div class="group" style="margin-top:8px">
+        <div class="gr"><span class="gl">${RL.dest}</span><span class="gv"><button type="button" class="rbtn" data-act="dest-choose">Choisir…</button></span></div>
+        <div class="gr"><span class="gl">Ranger par chaîne</span><span class="gv"><button type="button" class="switch" role="switch" aria-checked="false" data-act="toggle" aria-label="Ranger par chaîne"></button></span></div>
+      </div>
+      <div class="actions" style="margin-top:10px"><button type="button" class="pbtn" data-act="dest-finder">Afficher dans le Finder</button></div>`, { right: true });
+  } else if (act === "dest-choose") { closeOverlays(); toast("Sélecteur de dossier macOS"); }
+  else if (act === "dest-finder") { closeOverlays(); toast(`Ouverture de ${RL.dest} dans le Finder`); }
+  else if (act === "clear") {
+    const before = RL.tasks.length;
+    RL.tasks = RL.tasks.filter((x) => RUNNING.includes(x.phase));
+    rlRefreshTasks();
+    toast(before - RL.tasks.length ? `${plural(before - RL.tasks.length, "élément")} retiré${before - RL.tasks.length > 1 ? "s" : ""}` : "Rien à nettoyer");
+  } else if (act === "t-cancel" && t) { t.phase = "cancel"; rlRefreshTasks(); }
+  else if (act === "t-retry" && t) { t.phase = "probe"; t.p = 0; t.probe = 0; rlRefreshTasks(); }
+  else if (act === "t-show" && t) toast(`« ${t.title} » dans le Finder`);
+}
+
+win.addEventListener("click", (e) => {
+  if (S.app !== "robloader") return;
+  const s = e.target.closest("[data-rl]");
+  if (s) {
+    const key = s.dataset.rl;
+    RL[key] = !RL[key];
+    win.querySelectorAll(`[data-rl="${key}"]`).forEach((b) => {
+      b.setAttribute(b.classList.contains("switch") ? "aria-checked" : "aria-pressed", String(RL[key]));
+    });
+    const coll = key === "clip" ? $("rl-clip") : key === "transcode" ? $("rl-out") : null;
+    if (coll) {
+      coll.classList.toggle("open", RL[key]);
+      if (key === "transcode") rlSyncOutput();
+      return;
+    }
+    rlOptsChanged();
+    return;
+  }
+  const act = e.target.closest("[data-act]");
+  if (act && act.dataset.act !== "toggle") rlAction(act.dataset.act, act);
+});
+win.addEventListener("input", (e) => {
+  if (S.app !== "robloader") return;
+  if (e.target.id === "rl-url") rlSetUrl(e.target.value);
+  if (e.target.id === "rl-start") RL.start = e.target.value;
+  if (e.target.id === "rl-end") RL.end = e.target.value;
+});
+win.addEventListener("keydown", (e) => {
+  if (S.app === "robloader" && e.target.id === "rl-url" && e.key === "Enter") rlDownload();
+});
+win.addEventListener("scroll", (e) => { if (e.target.id === "rl-scroll") RL.scroll = e.target.scrollTop; }, true);
+win.addEventListener("contextmenu", (e) => {
+  if (S.app !== "robloader") return;
+  const row = e.target.closest(".tk");
+  if (!row) return;
+  e.preventDefault();
+  const t = RL.tasks.find((x) => x.id === Number(row.dataset.id));
+  const w = win.getBoundingClientRect();
+  ctxMenu(e.clientX - w.left, e.clientY - w.top, [
+    { id: "show", label: "Afficher dans le Finder", disabled: t.phase !== "done" },
+    { id: "copy", label: "Copier le lien" },
+    { id: "retry", label: RUNNING.includes(t.phase) ? "Relancer depuis le début" : "Relancer" },
+    { sep: 1 },
+    { id: "remove", label: "Retirer de la liste", danger: 1 },
+  ], (id) => {
+    if (id === "show") toast(`« ${t.title} » dans le Finder`);
+    else if (id === "copy") toast("Lien copié");
+    else if (id === "retry") { t.phase = "probe"; t.p = 0; t.probe = 0; rlRefreshTasks(); }
+    else if (id === "remove") { RL.tasks = RL.tasks.filter((x) => x !== t); rlRefreshTasks(); }
+  });
+});
+</script>
+
+
+<script>
+/* ---------- Variantes de la piste D ---------- */
+Object.assign(I, {
+  sidebar: svg(`<rect x="2" y="3" width="12" height="10" rx="2"/><path d="M6.2 3v10"/>`),
+  inspector: svg(`<rect x="2" y="3" width="12" height="10" rx="2"/><path d="M9.8 3v10"/>`),
+  up: svg(`<path d="M8 13V3.5M4 7.5l4-4 4 4"/>`),
+  list: svg(`<path d="M5.5 4.5h8M5.5 8h8M5.5 11.5h8M2.5 4.5h.01M2.5 8h.01M2.5 11.5h.01"/>`),
+  tiles: svg(`<rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><rect x="9" y="9" width="4.5" height="4.5" rx="1"/>`),
+  power: svg(`<path d="M8 2v6M4.6 4.4a5 5 0 106.8 0"/>`),
+  sliders: svg(`<path d="M2.5 4.5h6.5M12.5 4.5h1M2.5 11.5h1.5M7 11.5h6.5"/><circle cx="10.8" cy="4.5" r="1.6"/><circle cx="5.5" cy="11.5" r="1.6"/>`),
+});
+const ring = (id) => `<svg class="ring" viewBox="0 0 20 20" aria-hidden="true"><circle class="rt" cx="10" cy="10" r="8"/><circle class="rp" id="${id}" cx="10" cy="10" r="8" style="stroke-dashoffset:50.27"/><path d="M10 6.2v6.4M7.6 10.4L10 12.8l2.4-2.4"/></svg>`;
+const V = () => (S.var || (S.var = { copiteur: "d1", robloader: "d3" }))[S.app];
+
+const VLABELS = {
+  copiteur: [["d1", "D1 · Barre unique"], ["d2", "D2 · Barre latérale flottante"], ["d3", "D3 · Une barre par panneau"], ["d4", "D4 · Compacte"]],
+  robloader: [["d1", "D1 · Lien en barre"], ["d2", "D2 · Lien centré"], ["d3", "D3 · Volet à gauche (retenue)"], ["d4", "D4 · Options flottantes"]],
+};
+const VNOTES = {
+  copiteur: {
+    d1: { n: "Barre unique", desc: "Une seule barre d'outils pour toute la fenêtre. Chaque panneau garde son arborescence à gauche, comme aujourd'hui.",
+      pros: ["Le plus proche de l'app actuelle", "Une seule barre à maintenir"],
+      cons: ["‹ › agissent sur le panneau actif : moins évident", "Deux arborescences mangent de la largeur"],
+      tries: ["Clique un dossier dans une arborescence, puis ‹ ›", "Clique l'autre panneau : ‹ › changent de cible"] },
+    d2: { n: "Barre latérale flottante", desc: "Une seule arborescence en verre, détachée du bord comme dans le Finder de macOS 26. Elle montre l'arbre du panneau actif.",
+      pros: ["Le rendu le plus « macOS 27 »", "Les deux panneaux gagnent 168 px chacun"],
+      cons: ["Un seul arbre visible à la fois", "Il faut basculer entre Ton PC et Serveur"],
+      tries: ["Bascule Ton PC / Serveur en haut de la barre latérale", "Clique dans un panneau : la barre latérale suit"] },
+    d3: { n: "Une barre par panneau", desc: "La barre d'outils se coupe en deux, alignée sur les panneaux : navigation de ton PC à gauche, serveur et connexion à droite.",
+      pros: ["Chaque bouton agit sur le panneau juste en dessous", "La connexion est collée au panneau Serveur"],
+      cons: ["Plus de place pour la recherche dans la barre", "Titres plus serrés"],
+      tries: ["‹ › ↑ de chaque côté", "Menu du serveur et Déconnecter à droite"] },
+    d4: { n: "Compacte", desc: "Barre resserrée : les arborescences se masquent d'un clic, et les transferts passent dans un anneau de progression façon Safari. Plus de barre d'état.",
+      pros: ["Le maximum de place pour les fichiers", "Progression toujours visible dans la barre"],
+      cons: ["Le détail des transferts demande un clic", "Arborescences masquables, donc moins découvrables"],
+      tries: ["Bouton barre latérale : masque ou affiche les arborescences", "Glisse un fichier vers l'autre panneau, puis clique l'anneau"] },
+  },
+  robloader: {
+    d1: { n: "Lien en barre", desc: "La version précédente : lien, qualité, destination et Télécharger dans la barre, options au-dessus de la file.",
+      pros: ["Tout est visible d'un coup d'œil"], cons: ["Les options repoussent la file vers le bas"],
+      tries: ["Coller, puis Télécharger", "Activer Extrait"] },
+    d2: { n: "Lien centré", desc: "Le champ de lien est centré comme la barre d'adresse de Safari. Les options passent dans un popover, la file prend toute la fenêtre.",
+      pros: ["Fenêtre centrée sur la file", "Geste familier : coller au milieu de la barre"],
+      cons: ["Options cachées derrière un bouton", "Il faut un rappel des options actives"],
+      tries: ["Bouton Options (curseurs) dans la barre", "« Modifier » dans le rappel en haut de la file"] },
+    d3: { n: "Volet à gauche (retenue)", desc: "Les réglages vivent dans un volet latéral en verre à gauche, toujours ouvert. La file de téléchargements occupe la droite.",
+      pros: ["Options visibles sans repousser la file", "Qualité choisie en un clic"],
+      cons: ["Contenu HTML posé sur du verre natif (même défi que la piste C)", "Demande une fenêtre plus large"],
+      tries: ["Choisir une qualité dans le volet", "Activer Extrait : Début et Fin apparaissent dans le volet"] },
+    d4: { n: "Options flottantes", desc: "Les options deviennent des pastilles dans une capsule de verre en bas de la fenêtre. Les téléchargements en cours tiennent dans un anneau dans la barre.",
+      pros: ["Options à portée de main, file pleine hauteur", "Le plus Liquid Glass des quatre"],
+      cons: ["Capsule posée sur la file (HTML sur verre)", "Peu de place pour de futures options"],
+      tries: ["Pastille Extrait : Début et Fin apparaissent dans la capsule", "Anneau dans la barre : détail des téléchargements"] },
+  },
+};
+function vNotes() {
+  const v = VNOTES[S.app][V()];
+  const li = (a) => a.map((x) => `<li>${x}</li>`).join("");
+  return `<h2>${S.app === "copiteur" ? "Copiteur" : "Robloader"} · ${V().toUpperCase()} ${v.n}</h2>
+    <p>${v.desc}</p>${LEGEND}
+    <h3 class="nh">Pour</h3><ul>${li(v.pros)}</ul>
+    <h3 class="nh">Contre</h3><ul>${li(v.cons)}</ul>
+    <h3 class="nh">À essayer</h3><ul>${li(v.tries)}</ul>`;
+}
+function renderVarSeg() {
+  $("seg-var").innerHTML = VLABELS[S.app].map(([id, l]) => `<button type="button" data-v="${id}" aria-pressed="${id === V()}">${l}</button>`).join("");
+}
+$("seg-var").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b || b.dataset.v === V()) return;
+  S.var[S.app] = b.dataset.v;
+  render();
+});
+
+/* ---------- Copiteur : arborescences ---------- */
+FS_L["SSD Rushs T7"] = [["Proxies", null, "14/09 20:10"], ["Rushs 2026", null, "15/09 09:30"]];
+FS_L["Macintosh HD/Utilisateurs/robin/Bureau"] = [["Captures", null, "15/09 13:40"], ["Facture Adobe.pdf", 180e3, "02/09 10:00"]];
+FS_L["Macintosh HD/Utilisateurs/robin/Téléchargements"] = [["Robloader", null, "15/09 12:31"], ["rclone-v1.72-mt-sftp.zip", 24e6, "10/09 16:00"]];
+const PINS_L = [["Macintosh HD", "Utilisateurs", "robin", "Bureau"], ["Macintosh HD", "Utilisateurs", "robin", "Téléchargements"], ["Macintosh HD", "Utilisateurs", "robin", "Vidéos", "Tests"], ["Macintosh HD", "Utilisateurs", "robin", "Vidéos", "Tests", "Rushs Pixel 10 Pro"]];
+const PINS_R = [["/volume1", "frandroid", "livraisons"], ["/volume1", "frandroid", "livraisons", "2026-09"], ["/volume1", "frandroid", "rushs"]];
+CP.nav = true;
+
+const samePath = (a, b) => a.length === b.length && a.every((p, i) => p === b[i]);
+function trow(side, path, level, { pin = false, chev = "", drive = "" } = {}) {
+  const cur = samePath(path, CP.path[side]);
+  const icon = drive ? `<i class="drv ${drive}"></i>` : `<i class="ic"></i>`;
+  return `<button type="button" class="tr${cur ? " cur" : ""}" data-tree="${esc(JSON.stringify(path))}" data-tside="${side}" style="padding-left:${6 + level * 13}px"${pin ? ` title="${esc(path.join(" › "))}"` : ""}>
+    <span class="chev${chev === "open" ? " open" : ""}">${chev ? "›" : ""}</span>${icon}<span class="tl">${esc(path[path.length - 1])}</span></button>`;
+}
+function treeNodes(side, path, level) {
+  const fs = side === "local" ? FS_L : FS_R;
+  const cur = CP.path[side];
+  const onPath = path.length <= cur.length && path.every((p, i) => cur[i] === p);
+  const kids = (fs[path.join("/")] || []).filter((r) => r[1] === null);
+  const known = !!fs[path.join("/")];
+  const chev = known && !kids.length ? "" : onPath && kids.length ? "open" : "closed";
+  const drive = level === 0 ? (side === "remote" ? "net" : path[0] === "SSD Rushs T7" ? "ext" : "int") : "";
+  let html = trow(side, path, level, { chev, drive });
+  if (onPath) kids.forEach((k) => { html += treeNodes(side, [...path, k[0]], level + 1); });
+  return html;
+}
+function navInner(side) {
+  const off = side === "remote" && !CP.connected;
+  const pins = side === "local" ? PINS_L : PINS_R.filter((p) => p[0] === CP.path.remote[0]);
+  const pinRows = off || !pins.length ? `<div class="gs" style="padding:2px 12px">Aucun dossier épinglé</div>` : pins.map((p) => trow(side, p, 0, { pin: true })).join("");
+  const roots = side === "local" ? [["Macintosh HD"], ["SSD Rushs T7"]] : off ? [] : [[CP.path.remote[0]]];
+  return `<div class="tsec">Accès rapide</div>${pinRows}
+    <div class="tsec">${side === "local" ? "Ce PC" : "Serveur"}</div>
+    ${roots.length ? roots.map((r) => treeNodes(side, r, 0)).join("") : `<div class="gs" style="padding:2px 12px">Non connecté</div>`}`;
+}
+const navHTML = (side) => `<nav class="cp-nav" data-side="${side}" data-html aria-label="Arborescence ${side === "local" ? "de ton PC" : "du serveur"}">${navInner(side)}</nav>`;
+
+function cpBodyInner() {
+  if (V() === "d2") return cpPaneHTML("local") + `<div class="cp-div"></div>` + cpPaneHTML("remote");
+  const col = (side) => `<div class="cp-col${V() === "d4" && !CP.nav ? " nonav" : ""}" data-side="${side}">${navHTML(side)}<div class="cp-split"></div>${cpPaneHTML(side)}</div>`;
+  return col("local") + `<div class="cp-div"></div>` + col("remote");
+}
+function sideFloatInner() {
+  return `${LIGHTS}<div class="sside" role="group" aria-label="Arborescence affichée">
+      <button type="button" class="sbtn" data-act="sside" data-v="local" aria-pressed="${CP.active === "local"}">Ton PC</button>
+      <button type="button" class="sbtn" data-act="sside" data-v="remote" aria-pressed="${CP.active === "remote"}">Serveur</button></div>
+    ${navInner(CP.active)}`;
+}
+function cpStatusbar() {
+  const st = cpStatus();
+  return `<div class="statusbar" data-html>
+    <button type="button" class="sb-btn" data-act="xfers" aria-haspopup="dialog"><span class="track"><i id="cp-track" style="width:${st.pct}%"></i></span><span id="cp-xtext" class="num">${st.text}</span></button>
+    <span style="margin-left:auto">Moteur rclone custom</span></div>`;
+}
+const cpToolbarD1 = cpToolbarHTML;
+function cpToolbarD3() {
+  const hb = (side) => { const h = CP.hist[side]; return `
+    <button type="button" class="tbtn" data-act="back" data-pside="${side}" aria-label="Précédent"${h.back.length ? "" : " disabled"}>${I.back}</button>
+    <button type="button" class="tbtn" data-act="fwd" data-pside="${side}" aria-label="Suivant"${h.fwd.length ? "" : " disabled"}>${I.fwd}</button>
+    <button type="button" class="tbtn" data-act="up" data-pside="${side}" aria-label="Remonter"${CP.path[side].length > 1 && (side === "local" || CP.connected) ? "" : " disabled"}>${I.up}</button>`; };
+  return `<div class="toolbar" data-drag data-native style="right:50%">
+      ${LIGHTS}
+      <div class="glass tgrp">${hb("local")}</div>
+      <div class="tb-title"><b>Ton PC</b><span>Macintosh HD</span></div>
+      <div class="spacer" data-drag></div>
+      <div class="glass tgrp"><button type="button" class="tbtn" data-act="view" aria-label="Vue liste" aria-pressed="true">${I.list}</button><button type="button" class="tbtn" data-act="view" aria-label="Vue miniatures">${I.tiles}</button></div>
+    </div>
+    <div class="toolbar" data-drag data-native style="left:50%;padding-left:10px">
+      <div class="glass tgrp">${hb("remote")}</div>
+      <div class="tb-title"><b>Serveur</b><span>${CP.connected ? `<i class="dot on"></i>${esc(CP.server)}` : `<i class="dot"></i>Déconnecté`}</span></div>
+      <div class="spacer" data-drag></div>
+      <div class="glass tgrp"><button type="button" class="tbtn" data-act="servers" aria-label="Serveurs enregistrés" aria-haspopup="menu">${I.server}<span style="color:var(--muted)">⌄</span></button></div>
+      ${CP.connected ? `<div class="glass tgrp"><button type="button" class="tbtn" data-act="connect">Déconnecter</button></div>` : `<div class="glass tgrp tint"><button type="button" class="tbtn" data-act="connect">Se connecter…</button></div>`}
+      <div class="glass tgrp"><button type="button" class="tbtn" data-act="journal" aria-label="Journal">${I.journal}</button><button type="button" class="tbtn" data-act="settings" aria-label="Paramètres de transfert">${I.gear}</button></div>
+    </div>`;
+}
+function cpToolbarD4() {
+  const h = CP.hist[CP.active];
+  const sub = CP.connected ? `<i class="dot on"></i>${esc(CP.server)}` : `<i class="dot"></i>Aucun serveur`;
+  return `<div class="toolbar" data-drag data-native>
+    ${LIGHTS}
+    <div class="glass tgrp">
+      <button type="button" class="tbtn" data-act="sidebar" aria-label="Afficher ou masquer les arborescences" aria-pressed="${CP.nav}">${I.sidebar}</button>
+      <button type="button" class="tbtn" data-act="back" aria-label="Précédent"${h.back.length ? "" : " disabled"}>${I.back}</button>
+      <button type="button" class="tbtn" data-act="fwd" aria-label="Suivant"${h.fwd.length ? "" : " disabled"}>${I.fwd}</button>
+    </div>
+    <div class="tb-title"><b>Copiteur</b><span>${sub}</span></div>
+    <div class="spacer" data-drag></div>
+    <div class="glass tgrp"><button type="button" class="tbtn" data-act="servers" aria-haspopup="menu">${I.server}${CP.connected ? esc(CP.server) : "Serveurs"}<span style="color:var(--muted)">⌄</span></button></div>
+    <div class="glass tgrp">
+      <button type="button" class="tbtn" data-act="ring" aria-label="Transferts" title="Transferts">${ring("cp-ring")}</button>
+      <button type="button" class="tbtn" data-act="connect" aria-label="${CP.connected ? "Déconnecter" : "Se connecter"}" title="${CP.connected ? "Déconnecter" : "Se connecter…"}">${I.power}</button>
+      <button type="button" class="tbtn" data-act="settings" aria-label="Paramètres de transfert">${I.gear}</button>
+    </div>
+    <label class="glass tsearch" style="width:170px">${I.search}<input id="cp-q" type="search" placeholder="Rechercher" value="${esc(CP.q)}" aria-label="Rechercher dans les deux panneaux"></label>
+  </div>`;
+}
+
+cpHTML = function () {
+  const v = V();
+  const body = (style = "") => `<div class="cp-body" id="cp-body" style="${style}">${cpBodyInner()}</div>`;
+  if (v === "d2") {
+    const tb = cpToolbarD1().replace(LIGHTS, "").replace(/<div class="tb-title">[\s\S]*?<\/span><\/div>/, "").replace('class="toolbar"', 'class="toolbar" style="left:236px"').replace('class="glass tsearch"', 'class="glass tsearch" style="width:150px"');
+    return `<div class="base vib" style="width:250px;right:auto"></div>
+      <div class="side-float glass" id="cp-side" data-native>${sideFloatInner()}</div>
+      ${tb}<div class="edge top" style="height:58px;left:236px"></div>${body("left:236px")}${cpStatusbar()}`;
+  }
+  if (v === "d3") return `${cpToolbarD3()}<div class="edge top" style="height:58px"></div>${body()}${cpStatusbar()}`;
+  if (v === "d4") return `${cpToolbarD4()}<div class="edge top" style="height:58px"></div>${body("bottom:0")}`;
+  return `${cpToolbarD1()}<div class="edge top" style="height:58px"></div>${body()}${cpStatusbar()}`;
+};
+cpRefreshBody = function () {
+  const b = $("cp-body");
+  if (!b) return;
+  b.innerHTML = cpBodyInner();
+  cpAfterRender();
+  if ($("cp-side")) $("cp-side").innerHTML = sideFloatInner();
+};
+cpPatchSel = ((orig) => function () {
+  orig();
+  win.querySelectorAll("[data-pside]").forEach((btn) => {
+    const h = CP.hist[btn.dataset.pside];
+    if (btn.dataset.act === "back") btn.disabled = !h.back.length;
+    if (btn.dataset.act === "fwd") btn.disabled = !h.fwd.length;
+  });
+  const sf = $("cp-side");
+  if (sf && sf.querySelector(`.sbtn[data-v="${CP.active}"]`)?.getAttribute("aria-pressed") !== "true") sf.innerHTML = sideFloatInner();
+})(cpPatchSel);
+cpPatchStatus = ((orig) => function () {
+  orig();
+  const r = $("cp-ring");
+  if (r) r.style.strokeDashoffset = 50.27 * (1 - cpStatus().pct / 100);
+})(cpPatchStatus);
+const _cpAfter = cpAfterRender;
+cpAfterRender = function () { _cpAfter(); cpPatchStatus(); };
+
+win.addEventListener("click", (e) => {
+  const p = e.target.closest("[data-pside]");
+  if (p && S.app === "copiteur") CP.active = p.dataset.pside;
+}, true);
+win.addEventListener("click", (e) => {
+  if (S.app !== "copiteur") return;
+  const t = e.target.closest("[data-tree]");
+  if (t) {
+    const side = t.dataset.tside;
+    const path = JSON.parse(t.dataset.tree);
+    CP.active = side;
+    if (!samePath(path, CP.path[side])) navigate(side, path); else cpPatchSel();
+    return;
+  }
+  const a = e.target.closest("[data-act]");
+  if (!a) return;
+  const act = a.dataset.act;
+  if (act === "sidebar") { CP.nav = !CP.nav; a.setAttribute("aria-pressed", String(CP.nav)); cpRefreshBody(); }
+  else if (act === "up") { const s = a.dataset.pside || CP.active; if (CP.path[s].length > 1) navigate(s, CP.path[s].slice(0, -1)); }
+  else if (act === "view") toast("Vue miniatures, comme aujourd'hui");
+  else if (act === "sside") { CP.active = a.dataset.v; cpRefreshBody(); cpPatchSel(); }
+  else if (act === "ring") { const pop = popover(a, xpopBody(), { right: true }); pop.id = "xpop"; }
+});
+
+/* ---------- Robloader : variantes ---------- */
+RL.insp = true;
+const rlHTML_D1 = rlHTML;
+function rlUrlField(style) {
+  const chip = sourceOf(RL.url);
+  return `<label class="glass turl" style="${style}">${I.link}
+    <input id="rl-url" type="text" value="${esc(RL.url)}" placeholder="Colle un lien YouTube, Instagram, TikTok…" aria-label="Lien de la vidéo" spellcheck="false">
+    <span id="rl-chip">${chip ? `<span class="chip">${chip}</span>` : ""}</span>
+    <button type="button" class="tbtn" data-act="paste" aria-label="Coller le lien" title="Coller">${I.paste}</button></label>`;
+}
+const rlQueue = () => `<div class="sec"><h3>File de téléchargements<span class="gs" id="rl-count"></span></h3><button type="button" class="rbtn" data-act="clear">Nettoyer la liste</button></div><div class="group" id="rl-tasks"></div>`;
+const rlDownloadBtn = `<div class="glass tgrp tint"><button type="button" class="tbtn" data-act="download">${I.download}Télécharger</button></div>`;
+function rlSumInner() {
+  const on = [RL.output, RL.clip && `Extrait ${RL.start} → ${RL.end}`, RL.transcode && "Transcodage", RL.subs && "Sous-titres", RL.thumb && "Miniature"].filter(Boolean);
+  return `${on.map((x) => `<span class="c2">${x}</span>`).join("")}<span>vers ${RL.dest}</span><button type="button" class="rbtn" data-act="options" style="margin-left:auto">Modifier</button>`;
+}
+function rlInspInner() {
+  const ladder = !["TikTok", "Instagram", "X"].includes(sourceOf(RL.url));
+  const quality = ladder ? `<h4>Qualité</h4><div class="qgrid">${QUALITIES.map((q) => `<button type="button" class="qopt" data-q="${q}" aria-pressed="${q === RL.quality}">${q.replace("Qualité max", "Max").replace(/ \(.*\)/, "")}</button>`).join("")}</div>` : "";
+  return `${quality}
+    <h4>Options</h4><div class="group ing" id="rl-opts">${rlOptsHTML()}</div>
+    <h4>Destination</h4><div class="group ing"><div class="gr"><span class="gl path">${RL.dest}</span></div><div class="gr dest-act"><button type="button" class="rbtn" data-act="dest-choose">Choisir…</button><button type="button" class="rbtn" data-act="dest">Afficher</button></div></div>
+    <div class="insp-foot"><span class="dot on"></span>cookies Chrome ✓<span>·</span>4K disponible</div>`;
+}
+function rlAccInner() {
+  const tog = (k, l) => `<button type="button" class="tog" data-rl="${k}" aria-pressed="${RL[k]}">${l}</button>`;
+  return `${tog("clip", "Extrait")}
+    ${RL.clip ? `<input class="nf time" id="rl-start" value="${esc(RL.start)}" aria-label="Début"><span class="gs">→</span><input class="nf time" id="rl-end" value="${esc(RL.end)}" aria-label="Fin">` : ""}
+    ${tog("transcode", "Transcodage")}${tog("subs", "Sous-titres")}${tog("thumb", "Miniature")}
+    <span class="accsep"></span>
+    <button type="button" class="popup" data-act="output" aria-haspopup="menu">${RL.output}</button>
+    <button type="button" class="tbtn" data-act="dest" aria-label="Destination" title="Destination">${I.folder}</button>`;
+}
+rlHTML = function () {
+  const v = V();
+  if (v === "d1") return rlHTML_D1();
+  RL.sig = "";
+  const title = `<div class="tb-title one"><b>Robloader</b><span>2.1.7</span></div>`;
+  if (v === "d2") return `<div class="toolbar" data-drag data-native>${LIGHTS}${title}
+      <div class="spacer" data-drag></div>${rlUrlField("flex:0 1 470px")}<div class="spacer" data-drag></div>
+      <div class="glass tgrp"><button type="button" class="tbtn" data-act="options" aria-label="Options" title="Options" aria-haspopup="dialog">${I.sliders}</button>
+      <button type="button" class="tbtn" data-act="quality" aria-haspopup="menu">${RL.quality}<span style="color:var(--muted)">⌄</span></button></div>${rlDownloadBtn}</div>
+    <div class="edge top" style="height:62px"></div>
+    <div class="rl-scroll" id="rl-scroll" data-html><div class="sum" id="rl-sum">${rlSumInner()}</div>${rlQueue()}</div>`;
+  if (v === "d3") return `<div class="toolbar" data-drag data-native>${LIGHTS}${title}${rlUrlField("flex:1")}<div class="glass tgrp"><button type="button" class="tbtn" data-act="upd-install" title="Mise à jour disponible — v2.2.0"><span class="badge"></span>Mise à jour</button></div>${rlDownloadBtn}</div>
+    <div class="edge top" style="height:62px"></div>
+    <div class="rl-scroll" id="rl-scroll" data-html style="padding-left:318px">${rlQueue().replace('class="sec"', 'class="sec" style="margin-top:4px"')}</div>
+    <aside class="inspector glass" data-native aria-label="Réglages du téléchargement">${rlInspInner()}</aside>`;
+  return `<div class="toolbar" data-drag data-native>${LIGHTS}${title}${rlUrlField("flex:1")}
+      <div class="glass tgrp"><button type="button" class="tbtn" data-act="quality" aria-haspopup="menu">${RL.quality}<span style="color:var(--muted)">⌄</span></button></div>
+      <div class="glass tgrp"><button type="button" class="tbtn" data-act="rl-ring" aria-label="Téléchargements en cours" title="Téléchargements">${ring("rl-ring")}</button></div>${rlDownloadBtn}</div>
+    <div class="edge top" style="height:62px"></div>
+    <div class="rl-scroll" id="rl-scroll" data-html style="padding-bottom:84px">${rlQueue().replace('class="sec"', 'class="sec" style="margin-top:4px"')}</div>
+    <div class="accbar glass" id="rl-acc" data-native>${rlAccInner()}</div>`;
+};
+function rlOptsChanged() {
+  if ($("rl-opts")) $("rl-opts").innerHTML = rlOptsHTML();
+  if ($("rl-acc")) $("rl-acc").innerHTML = rlAccInner();
+  if ($("rl-sum")) $("rl-sum").innerHTML = rlSumInner();
+}
+function rlPopBody() {
+  const run = RL.tasks.filter((t) => RUNNING.includes(t.phase));
+  return `<h4>Téléchargements</h4>${run.length ? run.map((t) => `<div class="xr"><span class="t">${esc(t.title)}</span><span class="s num">${rlStatus(t).split(" · ")[0]}</span><span class="track"><i style="width:${t.phase === "dl" || t.phase === "tc" ? t.p : 0}%"></i></span></div>`).join("") : `<p style="margin:0;color:var(--muted);font-size:12.5px">Rien en cours.</p>`}`;
+}
+rlRefreshTasks = ((orig) => function () {
+  orig();
+  const run = RL.tasks.filter((t) => t.phase === "dl" || t.phase === "tc");
+  const pct = run.length ? run.reduce((a, t) => a + t.p, 0) / run.length : 0;
+  if ($("rl-ring")) $("rl-ring").style.strokeDashoffset = 50.27 * (1 - pct / 100);
+  if ($("rlpop")) $("rlpop").innerHTML = rlPopBody();
+})(rlRefreshTasks);
+
+win.addEventListener("click", (e) => {
+  if (S.app !== "robloader") return;
+  const q = e.target.closest("[data-q]");
+  if (q) { RL.quality = q.dataset.q; win.querySelectorAll(".qopt").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.q === RL.quality))); return; }
+  const a = e.target.closest("[data-act]");
+  if (!a) return;
+  if (a.dataset.act === "options") { popover(win.querySelector('.toolbar [data-act="options"]') || a, `<h4>Options</h4><div class="group" id="rl-opts" style="margin-top:8px">${rlOptsHTML()}</div>`, { right: true }); }
+  else if (a.dataset.act === "insp") { RL.insp = !RL.insp; render(); }
+  else if (a.dataset.act === "rl-ring") { const p = popover(a, rlPopBody(), { right: true }); p.id = "rlpop"; }
+});
+</script>
+
+<script>
+/* ---------- Pilotage de la page ---------- */
+const S = {
+  app: "robloader", bg: "solid", bar: "anneau", wall: "dunes", t: 50, reveal: "off",
+  look: window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+};
+try { const saved = JSON.parse(localStorage.getItem("piste-d") || "{}"); ["wall", "t", "look"].forEach((k) => { if (k in saved) S[k] = saved[k]; }); } catch (e) {}
+const save = () => { try { localStorage.setItem("piste-d", JSON.stringify({ wall: S.wall, t: S.t, look: S.look })); } catch (e) {} };
+const stage = $("stage");
+
+const LEGEND = `<div class="legend"><span><i style="border-color:#0a84ff"></i>Natif, dessiné par macOS</span><span><i style="border-color:#ff9f0a"></i>HTML, notre code</span></div>`;
+const NOTES = {
+  copiteur: `<h2>Copiteur · piste D</h2>
+    <p>La barre du haut devient une vraie barre d'outils macOS. Les deux panneaux et la barre d'état restent en HTML.</p>
+    ${LEGEND}
+    <h3 style="margin:0;font-size:13px">À essayer</h3>
+    <ul>
+      <li>Glisser des fichiers d'un panneau à l'autre, puis cliquer la barre d'état.</li>
+      <li>Double-clic sur un dossier, puis ‹ › dans la barre.</li>
+      <li>Clic droit sur un fichier, ou dans le vide.</li>
+      <li>Menu des serveurs, « Déconnecter », puis « Se connecter… ».</li>
+      <li>Rechercher : filtre les deux panneaux.</li>
+      <li>Faire défiler une liste sous la barre.</li>
+      <li>Clavier : ⌘A, ↑ ↓, Entrée pour renommer, ⌫ pour supprimer.</li>
+    </ul>
+    <p class="caveat">Changement par rapport à aujourd'hui : les champs Hôte, Utilisateur et Mot de passe quittent la barre pour une feuille « Nouvelle connexion ». Windows garderait sa barre actuelle.</p>`,
+  robloader: `<h2>Robloader · piste D</h2>
+    <p>Le lien, la qualité, la destination et « Télécharger » passent dans la barre d'outils native. Les options et la file restent en HTML, en listes groupées façon Réglages Système.</p>
+    ${LEGEND}
+    <h3 style="margin:0;font-size:13px">À essayer</h3>
+    <ul>
+      <li>Le bouton Coller (presse-papiers simulé), puis Télécharger ou Entrée.</li>
+      <li>Le menu de qualité et le bouton Destination.</li>
+      <li>Activer « Extrait » : Début et Fin apparaissent.</li>
+      <li>Annuler, Réessayer, Nettoyer la liste, clic droit sur un téléchargement.</li>
+      <li>Faire défiler la file sous la barre.</li>
+    </ul>
+    <p class="caveat">Changement par rapport à aujourd'hui : les cases à cocher deviennent des interrupteurs au style macOS. Windows garderait son interface actuelle.</p>`,
+};
+
+function setPressed(groupId, val) {
+  document.querySelectorAll(`#${groupId} button`).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === val)));
+}
+function render() {
+  closeOverlays();
+  win.className = "win mock" + (S.look === "dark" ? " dark" : "") + (S.reveal === "on" ? " reveal" : "");
+  win.dataset.bar = S.bar;
+  win.innerHTML = `<div class="base ${S.bg === "vib" ? "vib" : "solid"}"></div>` + (S.app === "copiteur" ? cpHTML() : rlHTML());
+  if (S.app === "copiteur") cpAfterRender(); else rlAfterRender();
+  $("wall").className = "wall " + S.wall;
+  stage.style.setProperty("--t", S.t / 100);
+  $("intensity").value = S.t;
+  setPressed("seg-app", S.app);
+  setPressed("seg-look", S.look);
+  setPressed("seg-wall", S.wall);
+  setPressed("seg-reveal", S.reveal);
+  $("notes").innerHTML = vNotes();
+  renderVarSeg();
+  save();
+}
+
+[["seg-app", "app"], ["seg-look", "look"], ["seg-wall", "wall"], ["seg-reveal", "reveal"]].forEach(([id, key]) => {
+  $(id).addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b || S[key] === b.dataset.v) return;
+    S[key] = b.dataset.v;
+    if (key === "wall") { $("wall").className = "wall " + S.wall; setPressed(id, S.wall); save(); }
+    else if (key === "reveal") { win.classList.toggle("reveal", S.reveal === "on"); setPressed(id, S.reveal); }
+    else render();
+  });
+});
+$("intensity").addEventListener("input", (e) => {
+  S.t = Number(e.target.value);
+  stage.style.setProperty("--t", S.t / 100);
+  save();
+});
+
+/* Interrupteurs génériques des popovers et feuilles */
+win.addEventListener("click", (e) => {
+  const t = e.target.closest('[data-act="toggle"]');
+  if (t) t.setAttribute("aria-checked", String(t.getAttribute("aria-checked") !== "true"));
+});
+
+/* Clavier */
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && win.querySelector(".scrim")) { closeOverlays(); return; }
+  if (!e.target.closest || !e.target.closest("#win") || win.querySelector(".scrim")) return;
+  if (S.app === "copiteur") {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") { e.preventDefault(); cpConnectSheet(); return; }
+    if (cpKey2(e)) e.preventDefault();
+  }
+});
+
+/* Déplacer la fenêtre */
+let moving = null;
+win.addEventListener("pointerdown", (e) => {
+  if (!e.target.closest("[data-drag]") || e.target.closest("button, input, label, .glass")) return;
+  moving = { x: e.clientX, y: e.clientY, l: win.offsetLeft, t: win.offsetTop };
+  win.setPointerCapture(e.pointerId);
+});
+win.addEventListener("pointermove", (e) => {
+  if (!moving) return;
+  win.style.left = Math.max(-800, Math.min(stage.clientWidth - 140, moving.l + e.clientX - moving.x)) + "px";
+  win.style.top = Math.max(0, Math.min(stage.clientHeight - 60, moving.t + e.clientY - moving.y)) + "px";
+});
+const endMove = () => { moving = null; };
+win.addEventListener("pointerup", endMove);
+win.addEventListener("pointercancel", endMove);
+
+win.style.left = Math.max(20, (stage.clientWidth - 1060) / 2) + "px";
+render();
+setInterval(() => { cpTick(); rlTick(); }, 500);
+</script>
+
+<script>
+/* ---------- Notes ---------- */
+vNotes = function () {
+  return `<h2>Robloader · D3, volet à gauche</h2>
+    <p>Disposition validée le 15 septembre, réglages du 16 septembre appliqués. Un seul choix reste ouvert.</p>
+    ${LEGEND}
+    <h3 class="nh">Tout est tranché</h3>
+    <ul>
+      <li>Progression : <b>anneau</b> près du bouton, bleu pour le téléchargement, violet pour le transcodage.</li>
+      <li>Fond derrière la file : <b>plein</b>.</li>
+      <li>Interrupteurs : <b>couleur d'accent du système</b>, matériau verre.</li>
+      <li>Titre « Robloader 2.1.7 » sur une ligne, cookies en pied de volet, mise à jour dans la barre d'outils.</li>
+      <li>Libellés courts, interrupteur sur la ligne de son libellé, Début/Fin et Format de sortie révélés en fondu-glissé.</li>
+      <li>Vignettes : la vraie miniature. Sites sans échelle de qualité : section masquée.</li>
+      <li>Lignes de la file à hauteur constante, titre et état centrés sur la vignette.</li>
+    </ul>
+    <h3 class="nh">À essayer</h3><ul>${li(v.tries)}</ul>`;
+}
+function renderVarSeg() {
+  $("seg-var").innerHTML = VLABELS[S.app].map(([id, l]) => `<button type="button" data-v="${id}" aria-pressed="${id === V()}">${l}</button>`).join("");
+}
+$("seg-var").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b || b.dataset.v === V()) return;
+  S.var[S.app] = b.dataset.v;
+  render();
+});
+
+/* ---------- Copiteur : arborescences ---------- */
+FS_L["SSD Rushs T7"] = [["Proxies", null, "14/09 20:10"], ["Rushs 2026", null, "15/09 09:30"]];
+FS_L["Macintosh HD/Utilisateurs/robin/Bureau"] = [["Captures", null, "15/09 13:40"], ["Facture Adobe.pdf", 180e3, "02/09 10:00"]];
+FS_L["Macintosh HD/Utilisateurs/robin/Téléchargements"] = [["Robloader", null, "15/09 12:31"], ["rclone-v1.72-mt-sftp.zip", 24e6, "10/09 16:00"]];
+const PINS_L = [["Macintosh HD", "Utilisateurs", "robin", "Bureau"], ["Macintosh HD", "Utilisateurs", "robin", "Téléchargements"], ["Macintosh HD", "Utilisateurs", "robin", "Vidéos", "Tests"], ["Macintosh HD", "Utilisateurs", "robin", "Vidéos", "Tests", "Rushs Pixel 10 Pro"]];
+const PINS_R = [["/volume1", "frandroid", "livraisons"], ["/volume1", "frandroid", "livraisons", "2026-09"], ["/volume1", "frandroid", "rushs"]];
+CP.nav = true;
+
+const samePath = (a, b) => a.length === b.length && a.every((p, i) => p === b[i]);
+function trow(side, path, level, { pin = false, chev = "", drive = "" } = {}) {
+  const cur = samePath(path, CP.path[side]);
+  const icon = drive ? `<i class="drv ${drive}"></i>` : `<i class="ic"></i>`;
+  return `<button type="button" class="tr${cur ? " cur" : ""}" data-tree="${esc(JSON.stringify(path))}" data-tside="${side}" style="padding-left:${6 + level * 13}px"${pin ? ` title="${esc(path.join(" › "))}"` : ""}>
+    <span class="chev${chev === "open" ? " open" : ""}">${chev ? "›" : ""}</span>${icon}<span class="tl">${esc(path[path.length - 1])}</span></button>`;
+}
+function treeNodes(side, path, level) {
+  const fs = side === "local" ? FS_L : FS_R;
+  const cur = CP.path[side];
+  const onPath = path.length <= cur.length && path.every((p, i) => cur[i] === p);
+  const kids = (fs[path.join("/")] || []).filter((r) => r[1] === null);
+  const known = !!fs[path.join("/")];
+  const chev = known && !kids.length ? "" : onPath && kids.length ? "open" : "closed";
+  const drive = level === 0 ? (side === "remote" ? "net" : path[0] === "SSD Rushs T7" ? "ext" : "int") : "";
+  let html = trow(side, path, level, { chev, drive });
+  if (onPath) kids.forEach((k) => { html += treeNodes(side, [...path, k[0]], level + 1); });
+  return html;
+}
+function navInner(side) {
+  const off = side === "remote" && !CP.connected;
+  const pins = side === "local" ? PINS_L : PINS_R.filter((p) => p[0] === CP.path.remote[0]);
+  const pinRows = off || !pins.length ? `<div class="gs" style="padding:2px 12px">Aucun dossier épinglé</div>` : pins.map((p) => trow(side, p, 0, { pin: true })).join("");
+  const roots = side === "local" ? [["Macintosh HD"], ["SSD Rushs T7"]] : off ? [] : [[CP.path.remote[0]]];
+  return `<div class="tsec">Accès rapide</div>${pinRows}
+    <div class="tsec">${side === "local" ? "Ce PC" : "Serveur"}</div>
+    ${roots.length ? roots.map((r) => treeNodes(side, r, 0)).join("") : `<div class="gs" style="padding:2px 12px">Non connecté</div>`}`;
+}
+const navHTML = (side) => `<nav class="cp-nav" data-side="${side}" data-html aria-label="Arborescence ${side === "local" ? "de ton PC" : "du serveur"}">${navInner(side)}</nav>`;
+
+function cpBodyInner() {
+  if (V() === "d2") return cpPaneHTML("local") + `<div class="cp-div"></div>` + cpPaneHTML("remote");
+  const col = (side) => `<div class="cp-col${V() === "d4" && !CP.nav ? " nonav" : ""}" data-side="${side}">${navHTML(side)}<div class="cp-split"></div>${cpPaneHTML(side)}</div>`;
+  return col("local") + `<div class="cp-div"></div>` + col("remote");
+}
+function sideFloatInner() {
+  return `${LIGHTS}<div class="sside" role="group" aria-label="Arborescence affichée">
+      <button type="button" class="sbtn" data-act="sside" data-v="local" aria-pressed="${CP.active === "local"}">Ton PC</button>
+      <button type="button" class="sbtn" data-act="sside" data-v="remote" aria-pressed="${CP.active === "remote"}">Serveur</button></div>
+    ${navInner(CP.active)}`;
+}
+function cpStatusbar() {
+  const st = cpStatus();
+  return `<div class="statusbar" data-html>
+    <button type="button" class="sb-btn" data-act="xfers" aria-haspopup="dialog"><span class="track"><i id="cp-track" style="width:${st.pct}%"></i></span><span id="cp-xtext" class="num">${st.text}</span></button>
+    <span style="margin-left:auto">Moteur rclone custom</span></div>`;
+}
+const cpToolbarD1 = cpToolbarHTML;
+function cpToolbarD3() {
+  const hb = (side) => { const h = CP.hist[side]; return `
+    <button type="button" class="tbtn" data-act="back" data-pside="${side}" aria-label="Précédent"${h.back.length ? "" : " disabled"}>${I.back}</button>
+    <button type="button" class="tbtn" data-act="fwd" data-pside="${side}" aria-label="Suivant"${h.fwd.length ? "" : " disabled"}>${I.fwd}</button>
+    <button type="button" class="tbtn" data-act="up" data-pside="${side}" aria-label="Remonter"${CP.path[side].length > 1 && (side === "local" || CP.connected) ? "" : " disabled"}>${I.up}</button>`; };
+  return `<div class="toolbar" data-drag data-native style="right:50%">
+      ${LIGHTS}
+      <div class="glass tgrp">${hb("local")}</div>
+      <div class="tb-title"><b>Ton PC</b><span>Macintosh HD</span></div>
+      <div class="spacer" data-drag></div>
+      <div class="glass tgrp"><button type="button" class="tbtn" data-act="view" aria-label="Vue liste" aria-pressed="true">${I.list}</button><button type="button" class="tbtn" data-act="view" aria-label="Vue miniatures">${I.tiles}</button></div>
+    </div>
+    <div class="toolbar" data-drag data-native style="left:50%;padding-left:10px">
+      <div class="glass tgrp">${hb("remote")}</div>
+      <div class="tb-title"><b>Serveur</b><span>${CP.connected ? `<i class="dot on"></i>${esc(CP.server)}` : `<i class="dot"></i>Déconnecté`}</span></div>
+      <div class="spacer" data-drag></div>
+      <div class="glass tgrp"><button type="button" class="tbtn" data-act="servers" aria-label="Serveurs enregistrés" aria-haspopup="menu">${I.server}<span style="color:var(--muted)">⌄</span></button></div>
+      ${CP.connected ? `<div class="glass tgrp"><button type="button" class="tbtn" data-act="connect">Déconnecter</button></div>` : `<div class="glass tgrp tint"><button type="button" class="tbtn" data-act="connect">Se connecter…</button></div>`}
+      <div class="glass tgrp"><button type="button" class="tbtn" data-act="journal" aria-label="Journal">${I.journal}</button><button type="button" class="tbtn" data-act="settings" aria-label="Paramètres de transfert">${I.gear}</button></div>
+    </div>`;
+}
+function cpToolbarD4() {
+  const h = CP.hist[CP.active];
+  const sub = CP.connected ? `<i class="dot on"></i>${esc(CP.server)}` : `<i class="dot"></i>Aucun serveur`;
+  return `<div class="toolbar" data-drag data-native>
+    ${LIGHTS}
+    <div class="glass tgrp">
+      <button type="button" class="tbtn" data-act="sidebar" aria-label="Afficher ou masquer les arborescences" aria-pressed="${CP.nav}">${I.sidebar}</button>
+      <button type="button" class="tbtn" data-act="back" aria-label="Précédent"${h.back.length ? "" : " disabled"}>${I.back}</button>
+      <button type="button" class="tbtn" data-act="fwd" aria-label="Suivant"${h.fwd.length ? "" : " disabled"}>${I.fwd}</button>
+    </div>
+    <div class="tb-title"><b>Copiteur</b><span>${sub}</span></div>
+    <div class="spacer" data-drag></div>
+    <div class="glass tgrp"><button type="button" class="tbtn" data-act="servers" aria-haspopup="menu">${I.server}${CP.connected ? esc(CP.server) : "Serveurs"}<span style="color:var(--muted)">⌄</span></button></div>
+    <div class="glass tgrp">
+      <button type="button" class="tbtn" data-act="ring" aria-label="Transferts" title="Transferts">${ring("cp-ring")}</button>
+      <button type="button" class="tbtn" data-act="connect" aria-label="${CP.connected ? "Déconnecter" : "Se connecter"}" title="${CP.connected ? "Déconnecter" : "Se connecter…"}">${I.power}</button>
+      <button type="button" class="tbtn" data-act="settings" aria-label="Paramètres de transfert">${I.gear}</button>
+    </div>
+    <label class="glass tsearch" style="width:170px">${I.search}<input id="cp-q" type="search" placeholder="Rechercher" value="${esc(CP.q)}" aria-label="Rechercher dans les deux panneaux"></label>
+  </div>`;
+}
+
+cpHTML = function () {
+  const v = V();
+  const body = (style = "") => `<div class="cp-body" id="cp-body" style="${style}">${cpBodyInner()}</div>`;
+  if (v === "d2") {
+    const tb = cpToolbarD1().replace(LIGHTS, "").replace(/<div class="tb-title">[\s\S]*?<\/span><\/div>/, "").replace('class="toolbar"', 'class="toolbar" style="left:236px"').replace('class="glass tsearch"', 'class="glass tsearch" style="width:150px"');
+    return `<div class="base vib" style="width:250px;right:auto"></div>
+      <div class="side-float glass" id="cp-side" data-native>${sideFloatInner()}</div>
+      ${tb}<div class="edge top" style="height:58px;left:236px"></div>${body("left:236px")}${cpStatusbar()}`;
+  }
+  if (v === "d3") return `${cpToolbarD3()}<div class="edge top" style="height:58px"></div>${body()}${cpStatusbar()}`;
+  if (v === "d4") return `${cpToolbarD4()}<div class="edge top" style="height:58px"></div>${body("bottom:0")}`;
+  return `${cpToolbarD1()}<div class="edge top" style="height:58px"></div>${body()}${cpStatusbar()}`;
+};
+cpRefreshBody = function () {
+  const b = $("cp-body");
+  if (!b) return;
+  b.innerHTML = cpBodyInner();
+  cpAfterRender();
+  if ($("cp-side")) $("cp-side").innerHTML = sideFloatInner();
+};
+cpPatchSel = ((orig) => function () {
+  orig();
+  win.querySelectorAll("[data-pside]").forEach((btn) => {
+    const h = CP.hist[btn.dataset.pside];
+    if (btn.dataset.act === "back") btn.disabled = !h.back.length;
+    if (btn.dataset.act === "fwd") btn.disabled = !h.fwd.length;
+  });
+  const sf = $("cp-side");
+  if (sf && sf.querySelector(`.sbtn[data-v="${CP.active}"]`)?.getAttribute("aria-pressed") !== "true") sf.innerHTML = sideFloatInner();
+})(cpPatchSel);
+cpPatchStatus = ((orig) => function () {
+  orig();
+  const r = $("cp-ring");
+  if (r) r.style.strokeDashoffset = 50.27 * (1 - cpStatus().pct / 100);
+})(cpPatchStatus);
+const _cpAfter = cpAfterRender;
+cpAfterRender = function () { _cpAfter(); cpPatchStatus(); };
+
+win.addEventListener("click", (e) => {
+  const p = e.target.closest("[data-pside]");
+  if (p && S.app === "copiteur") CP.active = p.dataset.pside;
+}, true);
+win.addEventListener("click", (e) => {
+  if (S.app !== "copiteur") return;
+  const t = e.target.closest("[data-tree]");
+  if (t) {
+    const side = t.dataset.tside;
+    const path = JSON.parse(t.dataset.tree);
+    CP.active = side;
+    if (!samePath(path, CP.path[side])) navigate(side, path); else cpPatchSel();
+    return;
+  }
+  const a = e.target.closest("[data-act]");
+  if (!a) return;
+  const act = a.dataset.act;
+  if (act === "sidebar") { CP.nav = !CP.nav; a.setAttribute("aria-pressed", String(CP.nav)); cpRefreshBody(); }
+  else if (act === "up") { const s = a.dataset.pside || CP.active; if (CP.path[s].length > 1) navigate(s, CP.path[s].slice(0, -1)); }
+  else if (act === "view") toast("Vue miniatures, comme aujourd'hui");
+  else if (act === "sside") { CP.active = a.dataset.v; cpRefreshBody(); cpPatchSel(); }
+  else if (act === "ring") { const pop = popover(a, xpopBody(), { right: true }); pop.id = "xpop"; }
+});
+
+/* ---------- Robloader : variantes ---------- */
+RL.insp = true;
+const rlHTML_D1 = rlHTML;
+function rlUrlField(style) {
+  const chip = sourceOf(RL.url);
+  return `<label class="glass turl" style="${style}">${I.link}
+    <input id="rl-url" type="text" value="${esc(RL.url)}" placeholder="Colle un lien YouTube, Instagram, TikTok…" aria-label="Lien de la vidéo" spellcheck="false">
+    <span id="rl-chip">${chip ? `<span class="chip">${chip}</span>` : ""}</span>
+    <button type="button" class="tbtn" data-act="paste" aria-label="Coller le lien" title="Coller">${I.paste}</button></label>`;
+}
+const rlQueue = () => `<div class="sec"><h3>File de téléchargements<span class="gs" id="rl-count"></span></h3><button type="button" class="rbtn" data-act="clear">Nettoyer la liste</button></div><div class="group" id="rl-tasks"></div>`;
+const rlDownloadBtn = `<div class="glass tgrp tint"><button type="button" class="tbtn" data-act="download">${I.download}Télécharger</button></div>`;
+function rlSumInner() {
+  const on = [RL.output, RL.clip && `Extrait ${RL.start} → ${RL.end}`, RL.transcode && "Transcodage", RL.subs && "Sous-titres", RL.thumb && "Miniature"].filter(Boolean);
+  return `${on.map((x) => `<span class="c2">${x}</span>`).join("")}<span>vers ${RL.dest}</span><button type="button" class="rbtn" data-act="options" style="margin-left:auto">Modifier</button>`;
+}
+function rlInspInner() {
+  const ladder = !["TikTok", "Instagram", "X"].includes(sourceOf(RL.url));
+  const quality = ladder ? `<h4>Qualité</h4><div class="qgrid">${QUALITIES.map((q) => `<button type="button" class="qopt" data-q="${q}" aria-pressed="${q === RL.quality}">${q.replace("Qualité max", "Max").replace(/ \(.*\)/, "")}</button>`).join("")}</div>` : "";
+  return `${quality}
+    <h4>Options</h4><div class="group ing" id="rl-opts">${rlOptsHTML()}</div>
+    <h4>Destination</h4><div class="group ing"><div class="gr"><span class="gl path">${RL.dest}</span></div><div class="gr dest-act"><button type="button" class="rbtn" data-act="dest-choose">Choisir…</button><button type="button" class="rbtn" data-act="dest">Afficher</button></div></div>
+    <div class="insp-foot"><span class="dot on"></span>cookies Chrome ✓<span>·</span>4K disponible</div>`;
+}
+function rlAccInner() {
+  const tog = (k, l) => `<button type="button" class="tog" data-rl="${k}" aria-pressed="${RL[k]}">${l}</button>`;
+  return `${tog("clip", "Extrait")}
+    ${RL.clip ? `<input class="nf time" id="rl-start" value="${esc(RL.start)}" aria-label="Début"><span class="gs">→</span><input class="nf time" id="rl-end" value="${esc(RL.end)}" aria-label="Fin">` : ""}
+    ${tog("transcode", "Transcodage")}${tog("subs", "Sous-titres")}${tog("thumb", "Miniature")}
+    <span class="accsep"></span>
+    <button type="button" class="popup" data-act="output" aria-haspopup="menu">${RL.output}</button>
+    <button type="button" class="tbtn" data-act="dest" aria-label="Destination" title="Destination">${I.folder}</button>`;
+}
+rlHTML = function () {
+  const v = V();
+  if (v === "d1") return rlHTML_D1();
+  RL.sig = "";
+  const title = `<div class="tb-title one"><b>Robloader</b><span>2.1.7</span></div>`;
+  if (v === "d2") return `<div class="toolbar" data-drag data-native>${LIGHTS}${title}
+      <div class="spacer" data-drag></div>${rlUrlField("flex:0 1 470px")}<div class="spacer" data-drag></div>
+      <div class="glass tgrp"><button type="button" class="tbtn" data-act="options" aria-label="Options" title="Options" aria-haspopup="dialog">${I.sliders}</button>
+      <button type="button" class="tbtn" data-act="quality" aria-haspopup="menu">${RL.quality}<span style="color:var(--muted)">⌄</span></button></div>${rlDownloadBtn}</div>
+    <div class="edge top" style="height:62px"></div>
+    <div class="rl-scroll" id="rl-scroll" data-html><div class="sum" id="rl-sum">${rlSumInner()}</div>${rlQueue()}</div>`;
+  if (v === "d3") return `<div class="toolbar" data-drag data-native>${LIGHTS}${title}${rlUrlField("flex:1")}<div class="glass tgrp"><button type="button" class="tbtn" data-act="upd-install" title="Mise à jour disponible — v2.2.0"><span class="badge"></span>Mise à jour</button></div>${rlDownloadBtn}</div>
+    <div class="edge top" style="height:62px"></div>
+    <div class="rl-scroll" id="rl-scroll" data-html style="padding-left:318px">${rlQueue().replace('class="sec"', 'class="sec" style="margin-top:4px"')}</div>
+    <aside class="inspector glass" data-native aria-label="Réglages du téléchargement">${rlInspInner()}</aside>`;
+  return `<div class="toolbar" data-drag data-native>${LIGHTS}${title}${rlUrlField("flex:1")}
+      <div class="glass tgrp"><button type="button" class="tbtn" data-act="quality" aria-haspopup="menu">${RL.quality}<span style="color:var(--muted)">⌄</span></button></div>
+      <div class="glass tgrp"><button type="button" class="tbtn" data-act="rl-ring" aria-label="Téléchargements en cours" title="Téléchargements">${ring("rl-ring")}</button></div>${rlDownloadBtn}</div>
+    <div class="edge top" style="height:62px"></div>
+    <div class="rl-scroll" id="rl-scroll" data-html style="padding-bottom:84px">${rlQueue().replace('class="sec"', 'class="sec" style="margin-top:4px"')}</div>
+    <div class="accbar glass" id="rl-acc" data-native>${rlAccInner()}</div>`;
+};
+function rlOptsChanged() {
+  if ($("rl-opts")) $("rl-opts").innerHTML = rlOptsHTML();
+  if ($("rl-acc")) $("rl-acc").innerHTML = rlAccInner();
+  if ($("rl-sum")) $("rl-sum").innerHTML = rlSumInner();
+}
+function rlPopBody() {
+  const run = RL.tasks.filter((t) => RUNNING.includes(t.phase));
+  return `<h4>Téléchargements</h4>${run.length ? run.map((t) => `<div class="xr"><span class="t">${esc(t.title)}</span><span class="s num">${rlStatus(t).split(" · ")[0]}</span><span class="track"><i style="width:${t.phase === "dl" || t.phase === "tc" ? t.p : 0}%"></i></span></div>`).join("") : `<p style="margin:0;color:var(--muted);font-size:12.5px">Rien en cours.</p>`}`;
+}
+rlRefreshTasks = ((orig) => function () {
+  orig();
+  const run = RL.tasks.filter((t) => t.phase === "dl" || t.phase === "tc");
+  const pct = run.length ? run.reduce((a, t) => a + t.p, 0) / run.length : 0;
+  if ($("rl-ring")) $("rl-ring").style.strokeDashoffset = 50.27 * (1 - pct / 100);
+  if ($("rlpop")) $("rlpop").innerHTML = rlPopBody();
+})(rlRefreshTasks);
+
+win.addEventListener("click", (e) => {
+  if (S.app !== "robloader") return;
+  const q = e.target.closest("[data-q]");
+  if (q) { RL.quality = q.dataset.q; win.querySelectorAll(".qopt").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.q === RL.quality))); return; }
+  const a = e.target.closest("[data-act]");
+  if (!a) return;
+  if (a.dataset.act === "options") { popover(win.querySelector('.toolbar [data-act="options"]') || a, `<h4>Options</h4><div class="group" id="rl-opts" style="margin-top:8px">${rlOptsHTML()}</div>`, { right: true }); }
+  else if (a.dataset.act === "insp") { RL.insp = !RL.insp; render(); }
+  else if (a.dataset.act === "rl-ring") { const p = popover(a, rlPopBody(), { right: true }); p.id = "rlpop"; }
+});
+</script>
+
+<script>
+/* ---------- Pilotage de la page ---------- */
+const S = {
+  app: "robloader", bg: "solid", bar: "anneau", wall: "dunes", t: 50, reveal: "off",
+  look: window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+};
+try { const saved = JSON.parse(localStorage.getItem("piste-d") || "{}"); ["wall", "t", "look"].forEach((k) => { if (k in saved) S[k] = saved[k]; }); } catch (e) {}
+const save = () => { try { localStorage.setItem("piste-d", JSON.stringify({ wall: S.wall, t: S.t, look: S.look })); } catch (e) {} };
+const stage = $("stage");
+
+const LEGEND = `<div class="legend"><span><i style="border-color:#0a84ff"></i>Natif, dessiné par macOS</span><span><i style="border-color:#ff9f0a"></i>HTML, notre code</span></div>`;
+const NOTES = {
+  copiteur: `<h2>Copiteur · piste D</h2>
+    <p>La barre du haut devient une vraie barre d'outils macOS. Les deux panneaux et la barre d'état restent en HTML.</p>
+    ${LEGEND}
+    <h3 style="margin:0;font-size:13px">À essayer</h3>
+    <ul>
+      <li>Glisser des fichiers d'un panneau à l'autre, puis cliquer la barre d'état.</li>
+      <li>Double-clic sur un dossier, puis ‹ › dans la barre.</li>
+      <li>Clic droit sur un fichier, ou dans le vide.</li>
+      <li>Menu des serveurs, « Déconnecter », puis « Se connecter… ».</li>
+      <li>Rechercher : filtre les deux panneaux.</li>
+      <li>Faire défiler une liste sous la barre.</li>
+      <li>Clavier : ⌘A, ↑ ↓, Entrée pour renommer, ⌫ pour supprimer.</li>
+    </ul>
+    <p class="caveat">Changement par rapport à aujourd'hui : les champs Hôte, Utilisateur et Mot de passe quittent la barre pour une feuille « Nouvelle connexion ». Windows garderait sa barre actuelle.</p>`,
+  robloader: `<h2>Robloader · piste D</h2>
+    <p>Le lien, la qualité, la destination et « Télécharger » passent dans la barre d'outils native. Les options et la file restent en HTML, en listes groupées façon Réglages Système.</p>
+    ${LEGEND}
+    <h3 style="margin:0;font-size:13px">À essayer</h3>
+    <ul>
+      <li>Le bouton Coller (presse-papiers simulé), puis Télécharger ou Entrée.</li>
+      <li>Le menu de qualité et le bouton Destination.</li>
+      <li>Activer « Extrait » : Début et Fin apparaissent.</li>
+      <li>Annuler, Réessayer, Nettoyer la liste, clic droit sur un téléchargement.</li>
+      <li>Faire défiler la file sous la barre.</li>
+    </ul>
+    <p class="caveat">Changement par rapport à aujourd'hui : les cases à cocher deviennent des interrupteurs au style macOS. Windows garderait son interface actuelle.</p>`,
+};
+
+function setPressed(groupId, val) {
+  document.querySelectorAll(`#${groupId} button`).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === val)));
+}
+function render() {
+  closeOverlays();
+  win.className = "win mock" + (S.look === "dark" ? " dark" : "") + (S.reveal === "on" ? " reveal" : "");
+  win.dataset.bar = S.bar;
+  win.innerHTML = `<div class="base ${S.bg === "vib" ? "vib" : "solid"}"></div>` + (S.app === "copiteur" ? cpHTML() : rlHTML());
+  if (S.app === "copiteur") cpAfterRender(); else rlAfterRender();
+  $("wall").className = "wall " + S.wall;
+  stage.style.setProperty("--t", S.t / 100);
+  $("intensity").value = S.t;
+  setPressed("seg-app", S.app);
+  setPressed("seg-look", S.look);
+  setPressed("seg-wall", S.wall);
+  setPressed("seg-reveal", S.reveal);
+  $("notes").innerHTML = vNotes();
+  renderVarSeg();
+  save();
+}
+
+[["seg-app", "app"], ["seg-look", "look"], ["seg-wall", "wall"], ["seg-reveal", "reveal"]].forEach(([id, key]) => {
+  $(id).addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b || S[key] === b.dataset.v) return;
+    S[key] = b.dataset.v;
+    if (key === "wall") { $("wall").className = "wall " + S.wall; setPressed(id, S.wall); save(); }
+    else if (key === "reveal") { win.classList.toggle("reveal", S.reveal === "on"); setPressed(id, S.reveal); }
+    else render();
+  });
+});
+$("intensity").addEventListener("input", (e) => {
+  S.t = Number(e.target.value);
+  stage.style.setProperty("--t", S.t / 100);
+  save();
+});
+
+/* Interrupteurs génériques des popovers et feuilles */
+win.addEventListener("click", (e) => {
+  const t = e.target.closest('[data-act="toggle"]');
+  if (t) t.setAttribute("aria-checked", String(t.getAttribute("aria-checked") !== "true"));
+});
+
+/* Clavier */
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && win.querySelector(".scrim")) { closeOverlays(); return; }
+  if (!e.target.closest || !e.target.closest("#win") || win.querySelector(".scrim")) return;
+  if (S.app === "copiteur") {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") { e.preventDefault(); cpConnectSheet(); return; }
+    if (cpKey2(e)) e.preventDefault();
+  }
+});
+
+/* Déplacer la fenêtre */
+let moving = null;
+win.addEventListener("pointerdown", (e) => {
+  if (!e.target.closest("[data-drag]") || e.target.closest("button, input, label, .glass")) return;
+  moving = { x: e.clientX, y: e.clientY, l: win.offsetLeft, t: win.offsetTop };
+  win.setPointerCapture(e.pointerId);
+});
+win.addEventListener("pointermove", (e) => {
+  if (!moving) return;
+  win.style.left = Math.max(-800, Math.min(stage.clientWidth - 140, moving.l + e.clientX - moving.x)) + "px";
+  win.style.top = Math.max(0, Math.min(stage.clientHeight - 60, moving.t + e.clientY - moving.y)) + "px";
+});
+const endMove = () => { moving = null; };
+win.addEventListener("pointerup", endMove);
+win.addEventListener("pointercancel", endMove);
+
+win.style.left = Math.max(20, (stage.clientWidth - 1060) / 2) + "px";
+render();
+setInterval(() => { cpTick(); rlTick(); }, 500);
+</script>
+
+<script>
+/* ---------- Notes ---------- */
+vNotes = function () {
+  return `<h2>Robloader · D3, volet à gauche</h2>
+    <p>Disposition validée le 15 septembre, réglages du 16 septembre appliqués. Un seul choix reste ouvert.</p>
+    ${LEGEND}
+    <h3 class="nh">Q7 · Progression</h3>
+    <ul>
+      <li><b>Fil en bas de ligne</b> : mon choix. Un trait fin sur toute la largeur, au bord bas de la ligne, comme la progression de chargement d'une page.</li>
+      <li><b>Sous la vignette</b> : petit trait sous l'image, la progression reste attachée à la vidéo.</li>
+      <li><b>Sur la vignette</b> : liseré posé sur le bas de l'image, façon barre de lecture YouTube.</li>
+      <li><b>Anneau</b> : pas de barre du tout, un anneau qui se remplit à côté du bouton.</li>
+    </ul>
+    <h3 class="nh">Q6 · Fond de la file</h3>
+    <ul>
+      <li><b>Plein</b> : mon choix, lecture calme et bon contraste. C'est la règle d'Apple, du verre sur la navigation et du contenu sur de l'opaque.</li>
+      <li><b>Translucide</b> : joli à vide, agité dès qu'il y a des titres à lire, et ça dépend du fond d'écran.</li>
+    </ul>
+    <h3 class="nh">Appliqué le 16 septembre</h3>
+    <ul>
+      <li>Titre « Robloader 2.1.7 » sur une ligne, cookies en pied de volet.</li>
+      <li>Mise à jour dans la barre d'outils, avec sa pastille.</li>
+      <li>Interrupteurs au style macOS (couleur d'accent, verre) — dis-moi si tu préfères le vert.</li>
+      <li>Libellés courts, interrupteur toujours sur la même ligne.</li>
+      <li>Début/Fin et Format de sortie apparaissent en fondu-glissé ; Format de sortie n'existe que si Transcodage est activé.</li>
+      <li>Lignes de la file à hauteur constante, barre violette pour le transcodage.</li>
+    </ul>
+    <h3 class="nh">À essayer</h3>
+    <ul>
+      <li>Activer « Extraire un passage », puis « Transcodage ».</li>
+      <li>Coller un lien TikTok : la section Qualité disparaît.</li>
+      <li>Télécharger : la ligne ne saute plus quand la barre apparaît.</li>
+    </ul>
+    <p class="caveat">Le vrai verre de macOS 27 réfracte la lumière ; ici c'est un flou qui l'imite, et les interrupteurs sont dessinés en CSS. Dans l'app, ce seront de vrais NSSwitch.</p>`;
+};
+win.addEventListener("click", (e) => {
+  if (e.target.closest('[data-act="upd-install"]')) toast("Téléchargement de la mise à jour…");
+});
+render();
+</script>
