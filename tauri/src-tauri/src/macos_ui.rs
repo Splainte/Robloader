@@ -950,9 +950,15 @@ pub fn install(app: &AppHandle, window: &tauri::WebviewWindow) -> bool {
     split.addSplitViewItem(&sidebar_item);
     split.addSplitViewItem(&content_item);
 
+    // Pendant l'echange, AppKit redimensionne la fenetre alors que contentView
+    // est momentanement nil : le delegue de tao (windowDidResize) fait alors
+    // contentView().unwrap() et l'app avorte. On le detache le temps de l'echange.
     let frame = ns_window.frame();
+    let tao_delegate = ns_window.delegate();
+    ns_window.setDelegate(None);
     ns_window.setContentViewController(Some(&split));
     ns_window.setFrame_display(frame, true);
+    ns_window.setDelegate(tao_delegate.as_deref());
 
     UI.with(|c| *c.borrow_mut() = Some(ui));
     CONTROLLER.with(|c| *c.borrow_mut() = Some(controller.clone()));
