@@ -1,0 +1,257 @@
+/* ============================================================
+   macOS : file de telechargements (cf. MacLayout.tsx). La barre d'outils
+   et le volet sont natifs ; la webview est le panneau de contenu.
+   Tout est scope sous .mac : Windows n'est pas concerne.
+   ============================================================ */
+
+.mac {
+  --mac-solid: #f5f5f7;
+  --mac-card: #ffffff;
+  --mac-card-line: rgba(0, 0, 0, 0.08);
+  --mac-control: rgba(0, 0, 0, 0.06);
+  --mac-control-hover: rgba(0, 0, 0, 0.1);
+  --mac-purple: #af52de;
+
+  position: relative;
+  overflow: hidden;
+  font-size: 13px;
+  background: var(--mac-solid);
+}
+
+@media (prefers-color-scheme: dark) {
+  .mac {
+    --mac-solid: #1e1e20;
+    --mac-card: #2a2a2d;
+    --mac-card-line: rgba(255, 255, 255, 0.07);
+    --mac-control: rgba(255, 255, 255, 0.1);
+    --mac-control-hover: rgba(255, 255, 255, 0.16);
+    --mac-purple: #bf5af2;
+  }
+  /* Le voile sombre du layout historique ne s'applique pas ici. */
+  .app.mac[data-os="macos"] {
+    background-color: var(--mac-solid);
+  }
+}
+
+.mac button {
+  font: inherit;
+  color: inherit;
+  cursor: default;
+}
+.mac :focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rl-accent) 50%, transparent);
+}
+
+/* ---------- File ---------- */
+.mac-queue {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: calc(var(--mac-toolbar-h, 52px) + 10px) 16px 16px;
+}
+
+.mac-edge {
+  position: absolute;
+  z-index: 10;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--mac-toolbar-h, 52px) + 20px);
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--mac-solid) 78%, transparent) 0%,
+    color-mix(in srgb, var(--mac-solid) 40%, transparent) 60%,
+    transparent 100%
+  );
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 45%, transparent 100%);
+}
+
+.mac-queue__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 30px;
+  margin: 0 4px 8px;
+}
+.mac-queue__head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mac-queue__head h2 span {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--rl-text-muted);
+}
+
+.mac-card {
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--mac-card);
+  box-shadow: inset 0 0 0 1px var(--mac-card-line);
+}
+
+.mac-queue__empty {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--rl-text-muted);
+}
+
+/* Ligne de tache : hauteur constante, texte centre sur la vignette, la
+   progression (anneau) est a cote du bouton et ne prend aucune hauteur. */
+.mac-task {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  height: 60px;
+  padding: 0 14px;
+  border-top: 1px solid var(--rl-stroke);
+}
+.mac-task:first-child {
+  border-top: 0;
+}
+.mac-task__thumb {
+  width: 64px;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--mac-control);
+}
+.mac-task__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.mac-task__thumb-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--rl-text-muted);
+}
+.mac-task__text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mac-task__title,
+.mac-task__status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mac-task__title {
+  font-weight: 500;
+}
+.mac-task__status {
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--rl-text-muted);
+}
+.mac-task__status--ok {
+  color: var(--rl-ok);
+}
+.mac-task__status--warn {
+  color: var(--rl-warn);
+}
+.mac-task__status--err {
+  color: var(--rl-err);
+}
+.mac-task__action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---------- Boutons capsule ---------- */
+.mac-pill {
+  height: 24px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+  background: var(--mac-control);
+}
+.mac-pill:hover {
+  background: var(--mac-control-hover);
+}
+.mac-pill--accent,
+.mac-pill--accent:hover {
+  background: var(--rl-accent);
+  color: var(--rl-accent-text) !important;
+  font-weight: 600;
+}
+
+/* ---------- Anneau de progression ---------- */
+.mac-ring {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+.mac-ring circle {
+  fill: none;
+  stroke-width: 2.4;
+}
+.mac-ring__track {
+  stroke: var(--rl-stroke);
+}
+.mac-ring__fill {
+  stroke: var(--rl-accent);
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 10px 10px;
+  transition: stroke-dashoffset 0.3s linear, stroke 0.2s ease;
+}
+.mac-ring.is-transcode .mac-ring__fill {
+  stroke: var(--mac-purple);
+}
+.mac-ring.is-spinning {
+  animation: mac-spin 0.9s linear infinite;
+}
+@keyframes mac-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- Message discret ---------- */
+.mac-toast {
+  position: absolute;
+  z-index: 30;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: #fff;
+  background: rgba(40, 40, 44, 0.9);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  animation: mac-toast-in 0.2s ease;
+}
+@keyframes mac-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mac * {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+}
