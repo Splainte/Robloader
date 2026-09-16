@@ -502,6 +502,10 @@ function App() {
       onRepair={repair}
       onClear={clearList}
       onChooseDestination={chooseDestination}
+      hasVisualTest={tasks.some((t) => t.id < 0)}
+      onVisualTest={(fill) =>
+        setTasks((prev) => [...(fill ? makeVisualTestTasks() : []), ...prev.filter((t) => t.id > 0)])
+      }
     />
   );
 }

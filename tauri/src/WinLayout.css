@@ -33,7 +33,7 @@
 
   height: 100%;
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: 348px minmax(0, 1fr);
   grid-template-rows: 48px minmax(0, 1fr);
   color: var(--w-text);
   font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
@@ -212,9 +212,13 @@
 }
 .w-cards {
   display: grid;
+  /* minmax(0, 1fr) : une carte ne deborde jamais du volet (sinon la largeur
+     minimale du texte l'emporte et la carte touche le bord droit). */
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
 }
 .w-card {
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -250,7 +254,8 @@
   flex: 0 0 auto;
 }
 .w-state {
-  min-width: 64px;
+  flex: 0 0 auto;
+  min-width: 62px;
   text-align: right;
 }
 
@@ -681,4 +686,42 @@
     transition-duration: 0s !important;
     animation-duration: 0s !important;
   }
+}
+
+/* ---------- Menu contextuel (clic droit dans la file) ---------- */
+.w-ctx {
+  position: fixed;
+  z-index: 120;
+  min-width: 220px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  background: var(--w-menu);
+  border: 1px solid var(--w-menu-stroke);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.14);
+}
+.w-ctx button {
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: default;
+}
+.w-ctx button:hover:not(:disabled) {
+  background: var(--w-subtle-hover);
+}
+.w-ctx button:disabled {
+  color: var(--w-text-2);
+}
+.w-ctx__sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--w-card-stroke);
 }

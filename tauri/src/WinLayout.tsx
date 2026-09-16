@@ -47,6 +47,8 @@ type Props = {
   onRepair: () => void;
   onClear: () => void;
   onChooseDestination: () => void;
+  hasVisualTest: boolean;
+  onVisualTest: (fill: boolean) => void;
 };
 
 // ---------- Icones (trait fin facon Segoe Fluent Icons) ----------
@@ -223,6 +225,49 @@ export default function WinLayout(props: Props) {
   const [toast, setToast] = useState("");
   const toastTimer = useRef<number | undefined>(undefined);
   const [maximized, setMaximized] = useState(false);
+  const [ctx, setCtx] = useState<{ x: number; y: number } | null>(null);
+  const ctxRef = useRef<HTMLDivElement>(null);
+
+  // Pas de menu de WebView2 (Retour, Actualiser, Imprimer...) hors des champs
+  // de saisie ; dans la file, notre propre menu contextuel.
+  useEffect(() => {
+    const onContext = (e: MouseEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.closest("input, textarea")) return;
+      e.preventDefault();
+      if (t.closest(".w-list")) {
+        const menuW = 240;
+        const menuH = 90;
+        setCtx({
+          x: Math.min(e.clientX, window.innerWidth - menuW - 8),
+          y: Math.min(e.clientY, window.innerHeight - menuH - 8),
+        });
+      } else {
+        setCtx(null);
+      }
+    };
+    document.addEventListener("contextmenu", onContext);
+    return () => document.removeEventListener("contextmenu", onContext);
+  }, []);
+
+  useEffect(() => {
+    if (!ctx) return;
+    const close = (e: Event) => {
+      if (ctxRef.current?.contains(e.target as Node)) return;
+      setCtx(null);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setCtx(null);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("blur", close);
+    document.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", close);
+      document.removeEventListener("scroll", close, true);
+    };
+  }, [ctx]);
 
   useEffect(() => {
     const sync = () => appWindow.isMaximized().then(setMaximized).catch(() => {});
@@ -461,6 +506,35 @@ export default function WinLayout(props: Props) {
         </div>
 
         {toast && <div className="w-toast" role="status">{toast}</div>}
+
+        {ctx && (
+          <div ref={ctxRef} className="w-ctx" role="menu" style={{ left: ctx.x, top: ctx.y }}>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                props.onVisualTest(true);
+                setCtx(null);
+              }}
+            >
+              <Ico d="download" />
+              Test visuel : remplir la file
+            </button>
+            <div className="w-ctx__sep" />
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!props.hasVisualTest}
+              onClick={() => {
+                props.onVisualTest(false);
+                setCtx(null);
+              }}
+            >
+              <span className="wi" />
+              Vider la file de test
+            </button>
+          </div>
+        )}
       </main>
     </div>
   );
