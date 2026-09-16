@@ -317,6 +317,10 @@
 .w-field::placeholder {
   color: var(--w-text-2);
 }
+/* Pas de contour de focus : le soulignage d'accent suffit (comme le champ de lien). */
+.win .w-field:focus-visible {
+  outline: none;
+}
 .w-field:focus {
   border-bottom: 2px solid var(--w-accent);
   background: var(--w-layer);
