@@ -30,13 +30,13 @@ use objc2_app_kit::{
     NSPasteboardTypeString, NSPopUpButton, NSScrollView, NSSplitViewController, NSSplitViewItem,
     NSSplitViewItemBehavior, NSStackView, NSStackViewDistribution, NSSwitch, NSTextField,
     NSTextFieldDelegate, NSToolbar, NSToolbarDelegate, NSToolbarDisplayMode,
-    NSToolbarFlexibleSpaceItemIdentifier, NSToolbarItem, NSToolbarItemStyle,
+    NSToolbarFlexibleSpaceItemIdentifier, NSToolbarItem, NSToolbarSpaceItemIdentifier, NSToolbarItemStyle,
     NSToolbarSidebarTrackingSeparatorItemIdentifier, NSUserInterfaceLayoutOrientation, NSView,
     NSViewController, NSWindow, NSWindowTitleVisibility, NSWindowToolbarStyle,
 };
 use objc2_foundation::{
     ns_string, MainThreadMarker, NSArray, NSEdgeInsets, NSNotification, NSObject,
-    NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
+    NSNumber, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -342,36 +342,16 @@ impl UrlCapsule {
         }
     }
 
-    fn is_dark(&self) -> bool {
-        unsafe {
-            let appearance: *mut AnyObject = msg_send![self, effectiveAppearance];
-            if appearance.is_null() {
-                return false;
-            }
-            let names = NSArray::from_retained_slice(&[
-                NSString::from_str("NSAppearanceNameAqua"),
-                NSString::from_str("NSAppearanceNameDarkAqua"),
-            ]);
-            let best: Option<Retained<NSString>> =
-                msg_send![appearance, bestMatchFromAppearancesWithNames: &*names];
-            best.is_some_and(|b| b.to_string() == "NSAppearanceNameDarkAqua")
-        }
-    }
-
     fn paint(&self) {
-        let dark = self.is_dark();
+        // Pas de fond : sur macOS 26/27 la barre d'outils enveloppe deja l'item
+        // dans son verre (un fond en plus le rendait opaque). Seul le contour
+        // d'accent au focus est dessine ici.
         let focused = self.ivars().focused.get();
-        let fill = if dark {
-            NSColor::colorWithWhite_alpha(1.0, 0.10)
-        } else {
-            NSColor::colorWithWhite_alpha(1.0, 0.92)
-        };
+        let fill = NSColor::clearColor();
         let border = if focused {
             NSColor::controlAccentColor()
-        } else if dark {
-            NSColor::colorWithWhite_alpha(1.0, 0.16)
         } else {
-            NSColor::colorWithWhite_alpha(0.0, 0.14)
+            NSColor::clearColor()
         };
         unsafe {
             let layer: *mut AnyObject = msg_send![self, layer];
@@ -383,7 +363,7 @@ impl UrlCapsule {
             let _: () = msg_send![layer, setCornerRadius: 18.0f64];
             let _: () = msg_send![layer, setBackgroundColor: fill_cg];
             let _: () = msg_send![layer, setBorderColor: border_cg];
-            let _: () = msg_send![layer, setBorderWidth: if focused { 2.5f64 } else { 1.0f64 }];
+            let _: () = msg_send![layer, setBorderWidth: if focused { 2.5f64 } else { 0.0f64 }];
         }
     }
 }
@@ -737,6 +717,7 @@ impl Controller {
 
 fn toolbar_identifiers() -> Retained<NSArray<NSString>> {
     let flexible: &NSString = unsafe { NSToolbarFlexibleSpaceItemIdentifier };
+    let space: &NSString = unsafe { NSToolbarSpaceItemIdentifier };
     let separator: &NSString = unsafe { NSToolbarSidebarTrackingSeparatorItemIdentifier };
     let ids = [
         NSString::from_str(ID_TITLE),
@@ -744,6 +725,9 @@ fn toolbar_identifiers() -> Retained<NSArray<NSString>> {
         NSString::from_str(&separator.to_string()),
         NSString::from_str(ID_URL),
         NSString::from_str(ID_CHIP),
+        // Un espace separe Coller de la capsule : sinon la barre les fusionne
+        // dans un meme groupe de verre.
+        NSString::from_str(&space.to_string()),
         NSString::from_str(ID_PASTE),
         NSString::from_str(ID_UPDATE),
         NSString::from_str(ID_DOWNLOAD),
@@ -900,6 +884,93 @@ fn pin_width(view: &NSView, to: &NSView, inset: f64) {
         .trailingAnchor()
         .constraintEqualToAnchor_constant(&to.trailingAnchor(), -inset);
     NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&[leading, trailing]));
+}
+
+define_class!(
+    // Defilement du volet : le contenu s'efface progressivement sous la barre
+    // d'outils (AppKit n'expose pas d'API pour l'effet de bord du systeme, et
+    // il ne s'applique pas ici). Masque en degrade recale a chaque layout.
+    #[unsafe(super(NSScrollView))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "RobloaderFadingScrollView"]
+    struct FadingScrollView;
+
+    impl FadingScrollView {
+        #[unsafe(method(layout))]
+        fn layout(&self) {
+            unsafe {
+                let _: () = msg_send![super(self), layout];
+            }
+            self.update_fade_mask();
+        }
+    }
+);
+
+impl FadingScrollView {
+    fn new(mtm: MainThreadMarker) -> Retained<Self> {
+        let this: Retained<Self> = unsafe { msg_send![Self::alloc(mtm), init] };
+        this.setWantsLayer(true);
+        this
+    }
+
+    fn update_fade_mask(&self) {
+        let Some(gradient_class) = AnyClass::get(c"CAGradientLayer") else {
+            return;
+        };
+        let bounds = self.bounds();
+        let height = bounds.size.height;
+        if height < 1.0 {
+            return;
+        }
+        // Hauteur masquee par la barre d'outils (fenetre - zone de contenu libre).
+        let toolbar = self
+            .window()
+            .map(|w| (w.frame().size.height - w.contentLayoutRect().size.height).max(0.0))
+            .unwrap_or(52.0);
+        let fade_start = (toolbar * 0.45).min(height);
+        let fade_end = (toolbar + 14.0).min(height);
+        unsafe {
+            let layer: *mut AnyObject = msg_send![self, layer];
+            if layer.is_null() {
+                return;
+            }
+            let transaction = AnyClass::get(c"CATransaction");
+            if let Some(t) = transaction {
+                let _: () = msg_send![t, begin];
+                let _: () = msg_send![t, setDisableActions: true];
+            }
+            let mut mask: *mut AnyObject = msg_send![layer, mask];
+            if mask.is_null() {
+                mask = msg_send![gradient_class, layer];
+                let clear = NSColor::colorWithWhite_alpha(0.0, 0.0);
+                let opaque = NSColor::colorWithWhite_alpha(0.0, 1.0);
+                let clear_cg: *mut AnyObject = msg_send![&*clear, CGColor];
+                let opaque_cg: *mut AnyObject = msg_send![&*opaque, CGColor];
+                let colors: *mut AnyObject = msg_send![objc2::class!(NSMutableArray), array];
+                for c in [clear_cg, clear_cg, opaque_cg, opaque_cg] {
+                    let _: () = msg_send![colors, addObject: c];
+                }
+                let _: () = msg_send![mask, setColors: colors];
+                let _: () = msg_send![layer, setMask: mask];
+            }
+            let _: () = msg_send![mask, setFrame: bounds];
+            // Le haut visuel depend du sens de la couche.
+            let flipped: bool = msg_send![layer, contentsAreFlipped];
+            let (start, end) = if flipped { (0.0, 1.0) } else { (1.0, 0.0) };
+            let _: () = msg_send![mask, setStartPoint: NSPoint::new(0.5, start)];
+            let _: () = msg_send![mask, setEndPoint: NSPoint::new(0.5, end)];
+            let locations = NSArray::from_retained_slice(&[
+                NSNumber::new_f64(0.0),
+                NSNumber::new_f64(fade_start / height),
+                NSNumber::new_f64(fade_end / height),
+                NSNumber::new_f64(1.0),
+            ]);
+            let _: () = msg_send![mask, setLocations: &*locations];
+            if let Some(t) = transaction {
+                let _: () = msg_send![t, commit];
+            }
+        }
+    }
 }
 
 define_class!(
@@ -1109,7 +1180,7 @@ fn build_ui(
     let document: Retained<FlippedView> = unsafe { msg_send![FlippedView::alloc(mtm), init] };
     document.setTranslatesAutoresizingMaskIntoConstraints(false);
     document.addSubview(&stack);
-    let scroll = NSScrollView::new(mtm);
+    let scroll = FadingScrollView::new(mtm);
     scroll.setDrawsBackground(false);
     scroll.setHasVerticalScroller(true);
     scroll.setAutohidesScrollers(true);
@@ -1189,7 +1260,7 @@ fn build_ui(
         repair_button,
         profile_id: DEFAULT_PROFILE.id,
     };
-    (Retained::into_super(scroll), ui)
+    (Retained::into_super(Retained::into_super(scroll)), ui)
 }
 
 /// Installe barre d'outils + volet natifs. A appeler dans setup (thread principal).
