@@ -1123,6 +1123,7 @@ fn build_ui(
     for v in [
         &*quality_reveal.container,
         &clip_row,
+        &transcode_row,
         &output_reveal.container,
         &subs_reveal.container,
     ] {
