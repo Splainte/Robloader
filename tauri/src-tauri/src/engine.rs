@@ -96,6 +96,9 @@ struct TaskUpdate {
     id: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     title: Option<String>,
+    // URL distante de la miniature (vignette de la file, layout macOS).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thumbnail: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -979,6 +982,11 @@ fn run_pipeline_inner(
         TaskUpdate {
             id,
             title: Some(base_title.clone()),
+            thumbnail: info
+                .get("thumbnail")
+                .and_then(|v| v.as_str())
+                .filter(|u| u.starts_with("https://"))
+                .map(str::to_string),
             ..Default::default()
         },
     );

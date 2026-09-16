@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 import { Icon } from "./icons";
+import MacLayout from "./MacLayout";
 
 const appWindow = getCurrentWindow();
 // macOS = barre native (feux tricolores dessines par l'OS, en haut a gauche).
@@ -35,7 +36,7 @@ const OUTPUTS_NATIVE = [
 ];
 
 // Profils de source : pilotent placeholder + options visibles (cf. SITE_PROFILES).
-type Profile = {
+export type Profile = {
   id: string;
   label: string;
   domains: string[];
@@ -81,12 +82,13 @@ function detectProfile(url: string): Profile {
 // ------------------------------------------------------------------
 // Etats des taches (file de telechargements) + evenements backend
 // ------------------------------------------------------------------
-type StatusKind = "info" | "warn" | "ok" | "err";
-type ActionKind = "cancel" | "open" | "repair" | "none";
+export type StatusKind = "info" | "warn" | "ok" | "err";
+export type ActionKind = "cancel" | "open" | "repair" | "none";
 
-type Task = {
+export type Task = {
   id: number;
   title: string;
+  thumbnail?: string;
   status: string;
   statusKind: StatusKind;
   percent: number; // 0..1
@@ -99,6 +101,7 @@ type Task = {
 type TaskUpdate = {
   id: number;
   title?: string;
+  thumbnail?: string;
   status?: string;
   statusKind?: StatusKind;
   percent?: number;
@@ -108,7 +111,7 @@ type TaskUpdate = {
   done?: boolean;
 };
 
-type EnvInfo = {
+export type EnvInfo = {
   downloadDir: string;
   cookiesOk: boolean;
   cookiesSource: string;
@@ -287,6 +290,8 @@ function App() {
   const [thumb, setThumb] = useState(false);
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
+  // macOS : l'extrait est un interrupteur ; coupe, Debut/Fin sont ignores.
+  const [clip, setClip] = useState(false);
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [env, setEnv] = useState<EnvInfo | null>(null);
@@ -347,6 +352,7 @@ function App() {
             ? {
                 ...t,
                 ...(u.title !== undefined ? { title: u.title } : {}),
+                ...(u.thumbnail !== undefined ? { thumbnail: u.thumbnail } : {}),
                 ...(u.status !== undefined ? { status: u.status } : {}),
                 ...(u.statusKind !== undefined ? { statusKind: u.statusKind } : {}),
                 ...(u.percent !== undefined ? { percent: u.percent } : {}),
@@ -395,8 +401,8 @@ function App() {
         opts: {
           id,
           url: u,
-          start,
-          end,
+          start: isMac && !clip ? "" : start,
+          end: isMac && !clip ? "" : end,
           qualityLabel: quality,
           output,
           subs: profile.subtitles ? subs : false,
@@ -433,9 +439,58 @@ function App() {
   function clearList() {
     setTasks((prev) => prev.filter((t) => t.action === "cancel"));
   }
+  async function installUpdate() {
+    if (!availableUpdate) return;
+    setUpdateInstalling(true);
+    try {
+      await invoke("install_update", { url: availableUpdate.url });
+    } catch {
+      setUpdateInstalling(false);
+    }
+  }
   async function chooseDestination() {
     const dir = await invoke<string | null>("choose_destination").catch(() => null);
     if (dir && env) setEnv({ ...env, downloadDir: dir });
+  }
+
+  if (isMac) {
+    return (
+      <MacLayout
+        url={url}
+        setUrl={setUrl}
+        profile={profile}
+        qualities={QUALITY_LABELS}
+        quality={quality}
+        setQuality={setQuality}
+        clip={clip}
+        setClip={setClip}
+        start={start}
+        setStart={setStart}
+        end={end}
+        setEnd={setEnd}
+        transcode={transcode}
+        toggleTranscode={toggleTranscode}
+        output={output}
+        setOutput={setOutput}
+        outputs={outputs}
+        subs={subs}
+        setSubs={setSubs}
+        thumb={thumb}
+        setThumb={setThumb}
+        tasks={tasks}
+        env={env}
+        appVersion={appVersion}
+        updateVersion={availableUpdate?.version ?? null}
+        updateInstalling={updateInstalling}
+        onInstallUpdate={installUpdate}
+        onDownload={startDownload}
+        onCancel={cancelTask}
+        onOpen={openFolder}
+        onRepair={repair}
+        onClear={clearList}
+        onChooseDestination={chooseDestination}
+      />
+    );
   }
 
   return (
@@ -475,14 +530,7 @@ function App() {
           <button
             className="btn btn--accent btn--sm"
             disabled={updateInstalling}
-            onClick={async () => {
-              setUpdateInstalling(true);
-              try {
-                await invoke("install_update", { url: availableUpdate.url });
-              } catch {
-                setUpdateInstalling(false);
-              }
-            }}
+            onClick={installUpdate}
           >
             {updateInstalling ? "Téléchargement…" : "Installer et relancer"}
           </button>

@@ -78,6 +78,16 @@ pub fn run() {
                 fallback_solid_background(&window);
             }
 
+            // macOS : le layout a volet lateral (290 px) exige une fenetre plus
+            // large que le minimum commun (560 px, garde pour Windows).
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::LogicalSize;
+                let _ = window.set_min_size(Some(LogicalSize::new(780.0, 520.0)));
+                let _ = window.set_size(LogicalSize::new(1000.0, 680.0));
+                let _ = window.center();
+            }
+
             // Corrige le "saut" du contenu pendant l'animation de zoom macOS.
             #[cfg(target_os = "macos")]
             unsafe {
