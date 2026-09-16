@@ -111,6 +111,16 @@ type TaskUpdate = {
   done?: boolean;
 };
 
+type DownloadSettings = {
+  qualityLabel: string;
+  start: string;
+  end: string;
+  output: string;
+  subs: boolean;
+  thumb: boolean;
+  transcode: boolean;
+};
+
 export type EnvInfo = {
   downloadDir: string;
   cookiesOk: boolean;
@@ -290,8 +300,6 @@ function App() {
   const [thumb, setThumb] = useState(false);
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
-  // macOS : l'extrait est un interrupteur ; coupe, Debut/Fin sont ignores.
-  const [clip, setClip] = useState(false);
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [env, setEnv] = useState<EnvInfo | null>(null);
@@ -369,6 +377,47 @@ function App() {
     };
   }, []);
 
+  // ---- macOS : pont avec la barre d'outils et le volet natifs (macos_ui.rs) ----
+  // Les reglages vivent cote natif ; on recoit lien + reglages au clic sur
+  // Telecharger. Refs = toujours la derniere version des handlers.
+  const macHandlers = useRef({
+    download: (_u: string, _s: DownloadSettings) => {},
+    chooseDestination: () => {},
+    revealDestination: () => {},
+    repair: () => {},
+    installUpdate: () => {},
+  });
+  macHandlers.current = {
+    download: startDownloadWith,
+    chooseDestination,
+    revealDestination: () => env && openFolder(env.downloadDir),
+    repair,
+    installUpdate,
+  };
+  useEffect(() => {
+    if (!isMac) return;
+    const subs = [
+      listen<{ url: string; settings: DownloadSettings }>("mac://download", (e) =>
+        macHandlers.current.download(e.payload.url, e.payload.settings)
+      ),
+      listen("mac://choose-destination", () => macHandlers.current.chooseDestination()),
+      listen("mac://reveal-destination", () => macHandlers.current.revealDestination()),
+      listen("mac://repair", () => macHandlers.current.repair()),
+      listen("mac://install-update", () => macHandlers.current.installUpdate()),
+    ];
+    return () => subs.forEach((p) => p.then((f) => f()));
+  }, []);
+  useEffect(() => {
+    if (isMac && env) invoke("mac_set_env", { ...env }).catch(() => {});
+  }, [env]);
+  useEffect(() => {
+    if (!isMac) return;
+    invoke("mac_set_update", {
+      version: availableUpdate?.version ?? null,
+      installing: updateInstalling,
+    }).catch(() => {});
+  }, [availableUpdate, updateInstalling]);
+
   // Si on bascule le transcodage et que le format courant n'existe plus, on retombe sur le 1er.
   function toggleTranscode(v: boolean) {
     setTranscode(v);
@@ -377,7 +426,19 @@ function App() {
   }
 
   function startDownload() {
-    const raw = url.trim();
+    startDownloadWith(url, {
+      qualityLabel: quality,
+      start,
+      end,
+      output,
+      subs: profile.subtitles ? subs : false,
+      thumb: profile.thumbnail ? thumb : false,
+      transcode,
+    });
+  }
+
+  function startDownloadWith(rawUrl: string, s: DownloadSettings) {
+    const raw = rawUrl.trim();
     if (!raw) return;
 
     // Batch : plusieurs URLs separees par des espaces / retours a la ligne.
@@ -401,13 +462,7 @@ function App() {
         opts: {
           id,
           url: u,
-          start: isMac && !clip ? "" : start,
-          end: isMac && !clip ? "" : end,
-          qualityLabel: quality,
-          output,
-          subs: profile.subtitles ? subs : false,
-          thumb: profile.thumbnail ? thumb : false,
-          transcode,
+          ...s,
           downloadDir: env?.downloadDir ?? null,
         },
       }).catch((err) => {
@@ -456,39 +511,11 @@ function App() {
   if (isMac) {
     return (
       <MacLayout
-        url={url}
-        setUrl={setUrl}
-        profile={profile}
-        qualities={QUALITY_LABELS}
-        quality={quality}
-        setQuality={setQuality}
-        clip={clip}
-        setClip={setClip}
-        start={start}
-        setStart={setStart}
-        end={end}
-        setEnd={setEnd}
-        transcode={transcode}
-        toggleTranscode={toggleTranscode}
-        output={output}
-        setOutput={setOutput}
-        outputs={outputs}
-        subs={subs}
-        setSubs={setSubs}
-        thumb={thumb}
-        setThumb={setThumb}
         tasks={tasks}
-        env={env}
-        appVersion={appVersion}
-        updateVersion={availableUpdate?.version ?? null}
-        updateInstalling={updateInstalling}
-        onInstallUpdate={installUpdate}
-        onDownload={startDownload}
         onCancel={cancelTask}
         onOpen={openFolder}
         onRepair={repair}
         onClear={clearList}
-        onChooseDestination={chooseDestination}
       />
     );
   }

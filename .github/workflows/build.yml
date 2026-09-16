@@ -20,6 +20,12 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      plateformes:
+        description: "Plateformes a construire"
+        type: choice
+        options: [toutes, macos, windows]
+        default: toutes
 
 permissions:
   contents: write   # necessaire pour attacher les artefacts a la Release
@@ -28,20 +34,11 @@ jobs:
   build:
     strategy:
       fail-fast: false
+      # Lancement manuel : on peut ne construire qu'une plateforme (input "plateformes").
+      # Sur un tag, inputs est vide => les deux.
+      # macOS = xcode-27 (Apple Silicon + SDK macOS 27) -> DMG universal2 (Intel + ARM).
       matrix:
-        include:
-          - platform: windows-latest
-            artifact: Robloader-windows
-            universal: '0'
-            rust_target: ''
-            tauri_args: ''
-            glob: tauri/src-tauri/target/release/bundle/nsis/*-setup.exe
-          - platform: xcode-27        # Apple Silicon + SDK macOS 27 -> DMG universal2 (Intel + ARM)
-            artifact: Robloader-macos
-            universal: '1'
-            rust_target: x86_64-apple-darwin
-            tauri_args: '-- --target universal-apple-darwin'
-            glob: tauri/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+        include: ${{ fromJSON(inputs.plateformes == 'macos' && '[{"platform":"xcode-27","artifact":"Robloader-macos","universal":"1","rust_target":"x86_64-apple-darwin","tauri_args":"-- --target universal-apple-darwin","glob":"tauri/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg"}]' || (inputs.plateformes == 'windows' && '[{"platform":"windows-latest","artifact":"Robloader-windows","universal":"0","rust_target":"","tauri_args":"","glob":"tauri/src-tauri/target/release/bundle/nsis/*-setup.exe"}]' || '[{"platform":"windows-latest","artifact":"Robloader-windows","universal":"0","rust_target":"","tauri_args":"","glob":"tauri/src-tauri/target/release/bundle/nsis/*-setup.exe"},{"platform":"xcode-27","artifact":"Robloader-macos","universal":"1","rust_target":"x86_64-apple-darwin","tauri_args":"-- --target universal-apple-darwin","glob":"tauri/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg"}]')) }}
     runs-on: ${{ matrix.platform }}
     env:
       ROBLOADER_UNIVERSAL: ${{ matrix.universal }}

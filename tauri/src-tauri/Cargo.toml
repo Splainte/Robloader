@@ -33,6 +33,11 @@ window-vibrancy = "0.6"
 # contenu pendant l'animation de resize/zoom (deja tire par window-vibrancy).
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
+# Barre d'outils, volet lateral et controles natifs (NSToolbar, NSGlassEffectView,
+# NSSwitch...) : API typees, deja tirees par tao/wry.
+objc2-app-kit = "0.3"
+objc2-foundation = "0.3"
+block2 = "0.6"
 
 # Profil release recommande par Tauri : binaire plus compact et plus rapide a
 # charger (le build CI est plus long, sans impact pour le dev local).

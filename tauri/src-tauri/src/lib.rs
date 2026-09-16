@@ -1,6 +1,8 @@
 use tauri::Manager;
 
 mod engine;
+#[cfg(target_os = "macos")]
+mod macos_ui;
 
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
@@ -51,6 +53,49 @@ fn fallback_solid_background<R: tauri::Runtime>(window: &tauri::WebviewWindow<R>
     let _ = window.set_background_color(Some(color));
 }
 
+// ---------- Pont avec l'interface native macOS (sans effet ailleurs) ----------
+
+#[tauri::command]
+fn mac_native_ui() -> bool {
+    #[cfg(target_os = "macos")]
+    return macos_ui::native_ui_installed();
+    #[cfg(not(target_os = "macos"))]
+    false
+}
+
+#[tauri::command]
+fn mac_set_env(
+    app: tauri::AppHandle,
+    download_dir: String,
+    cookies_ok: bool,
+    cookies_source: String,
+    js_runtime: bool,
+) {
+    #[cfg(target_os = "macos")]
+    macos_ui::set_env(app, download_dir, cookies_ok, cookies_source, js_runtime);
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, download_dir, cookies_ok, cookies_source, js_runtime);
+}
+
+#[tauri::command]
+fn mac_set_update(app: tauri::AppHandle, version: Option<String>, installing: bool) {
+    #[cfg(target_os = "macos")]
+    macos_ui::set_update(app, version, installing);
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, version, installing);
+}
+
+#[tauri::command]
+async fn mac_toolbar_height(app: tauri::AppHandle) -> f64 {
+    #[cfg(target_os = "macos")]
+    return macos_ui::toolbar_height(app);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        0.0
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -64,10 +109,25 @@ pub fn run() {
             #[cfg(not(any(target_os = "macos", target_os = "windows")))]
             let _ = &window;
 
-            // macOS : Vibrancy natif (NSVisualEffectView "Liquid Glass").
+            // Corrige le "saut" du contenu pendant l'animation de zoom macOS.
+            // Applique AVANT l'interface native : seulement la webview et son
+            // conteneur, pas les controles AppKit (NSSwitch, verre...).
+            #[cfg(target_os = "macos")]
+            unsafe {
+                if let Ok(ns_window) = window.ns_window() {
+                    let content_view: *mut objc2::runtime::AnyObject =
+                        objc2::msg_send![ns_window as *mut objc2::runtime::AnyObject, contentView];
+                    stabilize_content_on_resize(content_view);
+                }
+            }
+
+            // macOS : barre d'outils + volet lateral natifs (Liquid Glass). La
+            // webview ne garde que la file, sur fond plein. Si l'installation
+            // echoue, on retombe sur l'ancien fond Vibrancy plein cadre.
             // None pour theme/state laisse le systeme suivre l'apparence claire/sombre.
             #[cfg(target_os = "macos")]
-            if apply_vibrancy(
+            if !macos_ui::install(app.handle(), &window)
+                && apply_vibrancy(
                 &window,
                 NSVisualEffectMaterial::UnderWindowBackground,
                 Some(NSVisualEffectState::Active),
@@ -86,16 +146,6 @@ pub fn run() {
                 let _ = window.set_min_size(Some(LogicalSize::new(780.0, 520.0)));
                 let _ = window.set_size(LogicalSize::new(1000.0, 680.0));
                 let _ = window.center();
-            }
-
-            // Corrige le "saut" du contenu pendant l'animation de zoom macOS.
-            #[cfg(target_os = "macos")]
-            unsafe {
-                if let Ok(ns_window) = window.ns_window() {
-                    let content_view: *mut objc2::runtime::AnyObject =
-                        objc2::msg_send![ns_window as *mut objc2::runtime::AnyObject, contentView];
-                    stabilize_content_on_resize(content_view);
-                }
             }
 
             // Windows 11 : on reste frameless (titlebar custom) => decorations OFF.
@@ -126,6 +176,10 @@ pub fn run() {
             engine::cancel_download,
             engine::reveal_in_folder,
             engine::open_cookie_help,
+            mac_native_ui,
+            mac_set_env,
+            mac_set_update,
+            mac_toolbar_height,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
