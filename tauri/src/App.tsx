@@ -371,6 +371,16 @@ function App() {
   const profile = useMemo(() => detectProfile(url), [url]);
   const outputs = transcode ? OUTPUTS_TRANSCODE : OUTPUTS_NATIVE;
 
+  // La fenetre est creee cachee (tauri.conf.json) : on l'affiche apres le
+  // premier rendu peint, pour que fond, barre et volet apparaissent ensemble.
+  useEffect(() => {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        appWindow.show().catch(() => {});
+      })
+    );
+  }, []);
+
   // Infos d'environnement (dossier, cookies, runtime JS) pour la ligne d'etat.
   useEffect(() => {
     invoke<EnvInfo>("get_env").then(setEnv).catch(() => {});

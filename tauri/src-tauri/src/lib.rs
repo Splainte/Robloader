@@ -105,6 +105,17 @@ pub fn run() {
         .setup(|app| {
             let window = app.get_webview_window("main").unwrap();
 
+            // La fenetre demarre cachee (visible: false) et le front l'affiche une
+            // fois son fond dessine : tout apparait d'un coup. Filet de securite
+            // si le front ne s'est pas manifeste au bout de 3 s.
+            {
+                let w = window.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    let _ = w.show();
+                });
+            }
+
             // Sur Linux, aucun materiau natif : on evite le warning "unused".
             #[cfg(not(any(target_os = "macos", target_os = "windows")))]
             let _ = &window;
