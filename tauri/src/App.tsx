@@ -4,8 +4,8 @@ import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
-import { Icon } from "./icons";
 import MacLayout from "./MacLayout";
+import WinLayout from "./WinLayout";
 
 const appWindow = getCurrentWindow();
 // macOS = barre native (feux tricolores dessines par l'OS, en haut a gauche).
@@ -129,169 +129,6 @@ export type EnvInfo = {
 };
 
 // ------------------------------------------------------------------
-// Select custom : menu stylise (Windows 11 / macOS), thematise clair/sombre,
-// aligne PILE sous le bouton qui l'ouvre (corrige l'alignement macOS et le
-// menu natif qui restait clair sous Windows).
-// ------------------------------------------------------------------
-function Select({
-  value,
-  values,
-  onChange,
-  ariaLabel,
-  disabled,
-}: {
-  value: string;
-  values: string[];
-  onChange: (v: string) => void;
-  ariaLabel: string;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  return (
-    <div className={`select${open ? " is-open" : ""}`} ref={ref}>
-      <button
-        type="button"
-        className="select__trigger"
-        aria-label={ariaLabel}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        disabled={disabled}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span className="select__value">{value}</span>
-        <Icon name="chevron" className="select__chevron" />
-      </button>
-      {open && (
-        <div className="select__menu" role="listbox">
-          {values.map((v) => (
-            <button
-              type="button"
-              key={v}
-              role="option"
-              aria-selected={v === value}
-              className={`select__option${v === value ? " is-selected" : ""}`}
-              onClick={() => {
-                onChange(v);
-                setOpen(false);
-              }}
-            >
-              <Icon name="check" className="select__option-check" />
-              <span className="select__option-label">{v}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Check({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-}) {
-  return (
-    <label className="check">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-      />
-      <span className="check__box">
-        <Icon name="check" className="check__mark" />
-      </span>
-      <span className="check__label">{label}</span>
-    </label>
-  );
-}
-
-// Carte d'une tache (titre + statut + barre + bouton d'action).
-function TaskCard({
-  task,
-  onCancel,
-  onOpen,
-  onRepair,
-}: {
-  task: Task;
-  onCancel: (id: number) => void;
-  onOpen: (path: string) => void;
-  onRepair: () => void;
-}) {
-  return (
-    <div className="task">
-      <div className="task__main">
-        <div className="task__title" title={task.title}>
-          {task.title}
-        </div>
-        <div className={`task__status task__status--${task.statusKind}`}>
-          {task.status}
-        </div>
-        <div
-          className={`task__bar${task.indeterminate ? " is-indeterminate" : ""}${
-            task.statusKind === "ok" ? " is-ok" : ""
-          }`}
-        >
-          <div
-            className="task__bar-fill"
-            style={
-              task.indeterminate
-                ? undefined
-                : { width: `${Math.round(task.percent * 100)}%` }
-            }
-          />
-        </div>
-      </div>
-
-      <div className="task__action">
-        {task.action === "cancel" && (
-          <button className="btn btn--secondary btn--sm" onClick={() => onCancel(task.id)}>
-            <Icon name="x" className="btn__icon" />
-            <span>Annuler</span>
-          </button>
-        )}
-        {task.action === "open" && (
-          <button
-            className="btn btn--sm btn--ok"
-            onClick={() => task.finalPath && onOpen(task.finalPath)}
-          >
-            <Icon name="folder-open" className="btn__icon" />
-            <span>Ouvrir le dossier</span>
-          </button>
-        )}
-        {task.action === "repair" && (
-          <button className="btn btn--accent btn--sm" onClick={onRepair}>
-            <Icon name="wrench" className="btn__icon" />
-            <span>Réparer</span>
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ------------------------------------------------------------------
 // Test visuel (menu macOS) : file factice pour eprouver defilement,
 // barre d'outils et flou. Ids negatifs = jamais envoyes au moteur.
 // ------------------------------------------------------------------
@@ -359,6 +196,8 @@ function App() {
   const [thumb, setThumb] = useState(false);
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
+  // Windows : l'extrait est un interrupteur ; coupe, Debut/Fin sont ignores.
+  const [clip, setClip] = useState(false);
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [env, setEnv] = useState<EnvInfo | null>(null);
@@ -503,8 +342,8 @@ function App() {
   function startDownload() {
     startDownloadWith(url, {
       qualityLabel: quality,
-      start,
-      end,
+      start: clip ? start : "",
+      end: clip ? end : "",
       output,
       subs: profile.subtitles ? subs : false,
       thumb: profile.thumbnail ? thumb : false,
@@ -556,6 +395,23 @@ function App() {
     setStart("");
     setEnd("");
   }
+
+  // Windows : Ctrl+Maj+T remplit / vide la file factice (equivalent du menu
+  // « Test visuel » de macOS).
+  useEffect(() => {
+    if (isMac) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "t")) return;
+      e.preventDefault();
+      setTasks((prev) =>
+        prev.some((t) => t.id < 0)
+          ? prev.filter((t) => t.id > 0)
+          : [...makeVisualTestTasks(), ...prev]
+      );
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Test visuel : les taches factices (id < 0) progressent toutes seules.
   const hasFakeRunning = tasks.some((t) => t.id < 0 && t.action === "cancel");
@@ -612,173 +468,41 @@ function App() {
   }
 
   return (
-    <div className="app" data-os={isMac ? "macos" : "windows"}>
-      {/* Zone de titre deplacable. macOS : place a gauche pour les feux natifs.
-          Windows : on dessine nos propres boutons a droite. */}
-      <header className="titlebar" data-tauri-drag-region>
-        <span className="titlebar__title" data-tauri-drag-region>
-          Robloader
-          {appVersion && <span className="titlebar__version">{appVersion}</span>}
-        </span>
-
-        {!isMac && (
-          <div className="titlebar__controls">
-            <button className="winbtn" aria-label="Reduire" onClick={() => appWindow.minimize()}>
-              <svg width="11" height="11" viewBox="0 0 11 11">
-                <rect x="1.5" y="5" width="8" height="1" fill="currentColor" />
-              </svg>
-            </button>
-            <button className="winbtn" aria-label="Agrandir" onClick={() => appWindow.toggleMaximize()}>
-              <svg width="11" height="11" viewBox="0 0 11 11">
-                <rect x="1.5" y="1.5" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1" />
-              </svg>
-            </button>
-            <button className="winbtn winbtn--close" aria-label="Fermer" onClick={() => appWindow.close()}>
-              <svg width="11" height="11" viewBox="0 0 11 11" style={{ shapeRendering: "geometricPrecision" }}>
-                <path d="M1.5 1.5 L9.5 9.5 M9.5 1.5 L1.5 9.5" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
-              </svg>
-            </button>
-          </div>
-        )}
-      </header>
-
-      {availableUpdate && (
-        <div className="update-banner">
-          <span>Mise à jour disponible — v{availableUpdate.version}</span>
-          <button
-            className="btn btn--accent btn--sm"
-            disabled={updateInstalling}
-            onClick={installUpdate}
-          >
-            {updateInstalling ? "Téléchargement…" : "Installer et relancer"}
-          </button>
-        </div>
-      )}
-
-      <main className="content">
-        {/* ---- Ligne 1 : URL + qualite + destination + telecharger ---- */}
-        <div className="row row--main">
-          <div className="field field--url">
-            <Icon name="link" className="field__icon" />
-            <input
-              className="input"
-              type="text"
-              value={url}
-              placeholder={profile.placeholder}
-              onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && startDownload()}
-              spellCheck={false}
-            />
-            {profile.id !== "default" && (
-              <span className="source-chip">{profile.label}</span>
-            )}
-          </div>
-
-          {profile.ladder && (
-            <Select value={quality} values={QUALITY_LABELS} onChange={setQuality} ariaLabel="Qualité" />
-          )}
-
-          <button className="btn btn--secondary" onClick={chooseDestination}>
-            <Icon name="folder" className="btn__icon" />
-            <span>Destination</span>
-          </button>
-
-          <button className="btn btn--accent" onClick={startDownload}>
-            <Icon name="download" className="btn__icon" />
-            <span>Télécharger</span>
-          </button>
-        </div>
-
-        {/* ---- Ligne 2 : extrait optionnel ---- */}
-        <div className="row row--clip">
-          <span className="row__label">Extrait (optionnel)</span>
-          <span className="mini-label">Début</span>
-          <input
-            className="input input--time"
-            value={start}
-            placeholder="00:00"
-            onChange={(e) => setStart(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && startDownload()}
-            spellCheck={false}
-          />
-          <span className="mini-label">Fin</span>
-          <input
-            className="input input--time"
-            value={end}
-            placeholder="01:30"
-            onChange={(e) => setEnd(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && startDownload()}
-            spellCheck={false}
-          />
-          <span className="hint">format MM:SS ou HH:MM:SS — laisser vide pour la vidéo entière</span>
-        </div>
-
-        {/* ---- Ligne 3 : transcodage + sortie + sous-titres + miniature ---- */}
-        <div className="row row--options">
-          <Check checked={transcode} onChange={toggleTranscode} label="Transcodage" />
-          <span className="row__label">Sortie</span>
-          <Select value={output} values={outputs} onChange={setOutput} ariaLabel="Format de sortie" />
-          {profile.subtitles && (
-            <Check checked={subs} onChange={setSubs} label="Sous-titres (.srt)" />
-          )}
-          {profile.thumbnail && (
-            <Check checked={thumb} onChange={setThumb} label="Miniature" />
-          )}
-        </div>
-
-        {/* ---- Ligne d'etat ---- */}
-        <div className="status-line">
-          <Icon name="folder-open" className="status-line__icon" />
-          <span>{env?.downloadDir ?? "…"}</span>
-          {env && (
-            <>
-              <span className="status-line__dot">·</span>
-              <span>
-                {env.cookiesOk
-                  ? `cookies ${env.cookiesSource} ✓`
-                  : "cookies absents"}
-              </span>
-              {!env.jsRuntime && (
-                <>
-                  <span className="status-line__dot">·</span>
-                  <span>4K limitée (Deno absent)</span>
-                </>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* ---- File de telechargements ---- */}
-        <div className="queue-head">
-          <h2 className="queue-head__title">File de téléchargements</h2>
-          <button className="btn btn--secondary btn--sm" onClick={clearList}>
-            <span>Nettoyer la liste</span>
-          </button>
-        </div>
-
-        <div className="queue">
-          {tasks.length === 0 ? (
-            <div className="queue__empty">
-              <Icon name="tray" className="queue__empty-icon" />
-              <p>Aucun téléchargement pour l’instant.</p>
-              <span>Colle un lien ci-dessus pour commencer.</span>
-            </div>
-          ) : (
-            <div className="queue__list">
-              {tasks.map((t) => (
-                <TaskCard
-                  key={t.id}
-                  task={t}
-                  onCancel={cancelTask}
-                  onOpen={openFolder}
-                  onRepair={repair}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </main>
-    </div>
+    <WinLayout
+      url={url}
+      setUrl={setUrl}
+      profile={profile}
+      qualities={QUALITY_LABELS}
+      quality={quality}
+      setQuality={setQuality}
+      clip={clip}
+      setClip={setClip}
+      start={start}
+      setStart={setStart}
+      end={end}
+      setEnd={setEnd}
+      transcode={transcode}
+      toggleTranscode={toggleTranscode}
+      output={output}
+      setOutput={setOutput}
+      outputs={outputs}
+      subs={subs}
+      setSubs={setSubs}
+      thumb={thumb}
+      setThumb={setThumb}
+      tasks={tasks}
+      env={env}
+      appVersion={appVersion}
+      updateVersion={availableUpdate?.version ?? null}
+      updateInstalling={updateInstalling}
+      onInstallUpdate={installUpdate}
+      onDownload={startDownload}
+      onCancel={cancelTask}
+      onOpen={openFolder}
+      onRepair={repair}
+      onClear={clearList}
+      onChooseDestination={chooseDestination}
+    />
   );
 }
 

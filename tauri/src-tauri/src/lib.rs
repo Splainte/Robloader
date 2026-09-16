@@ -187,6 +187,13 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             {
                 let _ = window.set_decorations(false);
+                // Layout a volet lateral (308 px) : fenetre plus large par defaut.
+                {
+                    use tauri::LogicalSize;
+                    let _ = window.set_min_size(Some(LogicalSize::new(820.0, 560.0)));
+                    let _ = window.set_size(LogicalSize::new(1060.0, 700.0));
+                    let _ = window.center();
+                }
                 // Mica natif. None => suit le theme clair/sombre du systeme.
                 // Windows 10 : Mica n'existe pas — comme le fond CSS est 100%
                 // transparent, on peint un fond opaque au lieu de paniquer
