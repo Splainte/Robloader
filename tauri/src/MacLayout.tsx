@@ -130,6 +130,9 @@ export default function MacLayout({ tasks, onCancel, onOpen, onRepair, onClear }
 
   return (
     <div className="app mac" data-os="macos" style={{ ["--mac-toolbar-h" as string]: `${toolbarH}px` }}>
+      {/* Flou degressif sous la barre d'outils native (la webview n'a pas
+          l'effet de bord de defilement d'un NSScrollView). */}
+      <div className="mac-edge" aria-hidden="true" />
       <main className="mac-queue">
         <div className="mac-queue__head">
           <h2>

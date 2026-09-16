@@ -138,6 +138,28 @@ pub fn run() {
                 fallback_solid_background(&window);
             }
 
+            // macOS : menu « Test visuel » (file factice pour tester le
+            // defilement sous la barre d'outils et ses interactions).
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::menu::{Menu, MenuItem, Submenu};
+                use tauri::Emitter;
+                let handle = app.handle();
+                let menu = Menu::default(handle)?;
+                let fill = MenuItem::with_id(handle, "visual-test-fill", "Remplir la file (factice)", true, None::<&str>)?;
+                let clear = MenuItem::with_id(handle, "visual-test-clear", "Vider la file factice", true, None::<&str>)?;
+                menu.append(&Submenu::with_items(handle, "Test visuel", true, &[&fill, &clear])?)?;
+                app.set_menu(menu)?;
+                app.on_menu_event(|app, event| {
+                    let fill = match event.id().as_ref() {
+                        "visual-test-fill" => true,
+                        "visual-test-clear" => false,
+                        _ => return,
+                    };
+                    let _ = app.emit("mac://visual-test", fill);
+                });
+            }
+
             // macOS : le layout a volet lateral (290 px) exige une fenetre plus
             // large que le minimum commun (560 px, garde pour Windows).
             #[cfg(target_os = "macos")]

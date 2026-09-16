@@ -1,12 +1,12 @@
 // ============================================================
 // Interface native macOS (redesign D3, cf. docs/redesign-macos).
 //
-// - NSToolbar : champ de lien, pastille de source, Coller, Mise a jour,
-//   Telecharger (style prominent sur macOS 26+).
+// - NSToolbar : titre au-dessus du volet, capsule de lien facon Safari,
+//   source, Coller, Mise a jour, Telecharger (style prominent macOS 26+).
 // - NSSplitViewController : volet lateral systeme (Liquid Glass, suit le
 //   reglage d'opacite de macOS 27) avec des controles AppKit natifs
-//   (NSSegmentedControl, NSSwitch, NSPopUpButton...). La webview Tauri
-//   devient le panneau de contenu et n'affiche plus que la file.
+//   (NSButton, NSSwitch, NSPopUpButton...). La webview Tauri devient le
+//   panneau de contenu et n'affiche plus que la file.
 //
 // Les reglages vivent ici (SETTINGS). Un clic sur Telecharger (ou Entree)
 // emet "mac://download" avec le lien + les reglages ; le front cree la
@@ -14,24 +14,25 @@
 // Tout ce qui touche AppKit tourne sur le thread principal.
 // ============================================================
 
-use std::cell::RefCell;
+use std::cell::{Cell, OnceCell, RefCell};
+use std::ffi::c_void;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use objc2::rc::Retained;
-use objc2::runtime::{AnyObject, ProtocolObject, Sel};
+use objc2::runtime::{AnyClass, AnyObject, ProtocolObject, Sel};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
     NSAnimationContext, NSApplication, NSButton, NSColor, NSControlStateValueOff,
-    NSControlStateValueOn, NSControlTextEditingDelegate, NSEventType, NSFont, NSFontWeightSemibold,
-    NSImage, NSLayoutAttribute, NSLayoutConstraint, NSLineBreakMode, NSPasteboard,
-    NSPasteboardTypeString, NSPopUpButton, NSScrollView, NSSearchField, NSSearchFieldDelegate,
-    NSSegmentDistribution, NSSegmentSwitchTracking, NSSegmentedControl, NSSplitViewController,
-    NSSplitViewItem, NSSplitViewItemBehavior, NSStackView, NSStackViewDistribution, NSSwitch,
-    NSTextField, NSTextFieldDelegate, NSToolbar, NSToolbarDelegate, NSToolbarItem,
-    NSToolbarItemStyle, NSToolbarSidebarTrackingSeparatorItemIdentifier,
-    NSUserInterfaceLayoutOrientation, NSView, NSViewController, NSWindow, NSWindowTitleVisibility,
-    NSWindowToolbarStyle,
+    NSControlStateValueOn, NSControlTextEditingDelegate, NSEvent, NSEventType, NSFocusRingType,
+    NSFont, NSFontWeightBold, NSFontWeightSemibold, NSImage, NSImageView, NSLayoutAttribute,
+    NSLayoutConstraint, NSLayoutConstraintOrientation, NSLineBreakMode, NSPasteboard,
+    NSPasteboardTypeString, NSPopUpButton, NSScrollView, NSSplitViewController, NSSplitViewItem,
+    NSSplitViewItemBehavior, NSStackView, NSStackViewDistribution, NSSwitch, NSTextField,
+    NSTextFieldDelegate, NSToolbar, NSToolbarDelegate, NSToolbarDisplayMode,
+    NSToolbarFlexibleSpaceItemIdentifier, NSToolbarItem, NSToolbarItemStyle,
+    NSToolbarSidebarTrackingSeparatorItemIdentifier, NSUserInterfaceLayoutOrientation, NSView,
+    NSViewController, NSWindow, NSWindowTitleVisibility, NSWindowToolbarStyle,
 };
 use objc2_foundation::{
     ns_string, MainThreadMarker, NSArray, NSEdgeInsets, NSNotification, NSObject,
@@ -148,32 +149,123 @@ struct DownloadRequest {
     settings: Settings,
 }
 
+// ---------- Revelation animee d'une zone du volet ----------
+//
+// Un conteneur a hauteur contrainte (0 = ferme) masque son contenu comme un
+// rideau : le contenu reste epingle en haut, la ligne suivante glisse.
+// Les marges sont DANS le conteneur, pour qu'une zone fermee ne laisse aucun
+// espace dans la pile.
+
+struct Reveal {
+    container: Retained<NSView>,
+    content: Retained<NSView>,
+    height: Retained<NSLayoutConstraint>,
+    pad_top: f64,
+    pad_bottom: f64,
+}
+
+impl Reveal {
+    fn new(content: &NSView, pad_top: f64, pad_bottom: f64, open: bool, mtm: MainThreadMarker) -> Self {
+        let container = NSView::new(mtm);
+        container.setWantsLayer(true);
+        unsafe {
+            let layer: *mut AnyObject = msg_send![&*container, layer];
+            if !layer.is_null() {
+                let _: () = msg_send![layer, setMasksToBounds: true];
+            }
+        }
+        container.setTranslatesAutoresizingMaskIntoConstraints(false);
+        content.setTranslatesAutoresizingMaskIntoConstraints(false);
+        container.addSubview(content);
+        let pins = [
+            content.topAnchor().constraintEqualToAnchor_constant(&container.topAnchor(), pad_top),
+            content.leadingAnchor().constraintEqualToAnchor(&container.leadingAnchor()),
+            content.trailingAnchor().constraintEqualToAnchor(&container.trailingAnchor()),
+        ];
+        NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&pins));
+        let height = container.heightAnchor().constraintEqualToConstant(0.0);
+        height.setActive(true);
+        let reveal = Reveal {
+            container,
+            content: retain_ref(content),
+            height,
+            pad_top,
+            pad_bottom,
+        };
+        reveal.height.setConstant(if open { reveal.open_height() } else { 0.0 });
+        reveal.container.setAlphaValue(if open { 1.0 } else { 0.0 });
+        reveal
+    }
+
+    fn open_height(&self) -> f64 {
+        self.content.fittingSize().height + self.pad_top + self.pad_bottom
+    }
+
+    fn is_open(&self) -> bool {
+        self.height.constant() > 0.5
+    }
+
+    fn set(&self, root: &NSView, open: bool, animate: bool) {
+        if self.is_open() == open {
+            return;
+        }
+        let target = if open { self.open_height() } else { 0.0 };
+        if !animate {
+            self.height.setConstant(target);
+            self.container.setAlphaValue(if open { 1.0 } else { 0.0 });
+            return;
+        }
+        NSAnimationContext::beginGrouping();
+        let ctx = NSAnimationContext::currentContext();
+        ctx.setDuration(if open { 0.28 } else { 0.22 });
+        ctx.setAllowsImplicitAnimation(true);
+        set_ease_in_out(&ctx);
+        self.height.setConstant(target);
+        self.container.setAlphaValue(if open { 1.0 } else { 0.0 });
+        root.layoutSubtreeIfNeeded();
+        NSAnimationContext::endGrouping();
+    }
+}
+
+// CAMediaTimingFunction sans dependre d'objc2-quartz-core.
+fn set_ease_in_out(ctx: &NSAnimationContext) {
+    if let Some(cls) = AnyClass::get(c"CAMediaTimingFunction") {
+        unsafe {
+            let f: *mut AnyObject =
+                msg_send![cls, functionWithName: ns_string!("easeInEaseOut")];
+            if !f.is_null() {
+                let _: () = msg_send![ctx, setTimingFunction: f];
+            }
+        }
+    }
+}
+
 // ---------- Vues gardees pour les mises a jour (thread principal) ----------
 
 struct Ui {
     window: Retained<NSWindow>,
-    url_field: Retained<NSSearchField>,
+    url_capsule: Retained<UrlCapsule>,
+    url_field: Retained<NSTextField>,
     chip_item: Option<Retained<NSToolbarItem>>,
     update_item: Option<Retained<NSToolbarItem>>,
-    sidebar_stack: Retained<NSStackView>,
-    quality_section: Retained<NSStackView>,
+    sidebar_root: Retained<NSView>,
+    quality_reveal: Reveal,
+    quality_buttons: Vec<Retained<NSButton>>,
     clip_switch: Retained<NSSwitch>,
-    times_row: Retained<NSStackView>,
+    times_reveal: Reveal,
     start_field: Retained<NSTextField>,
     end_field: Retained<NSTextField>,
     transcode_switch: Retained<NSSwitch>,
-    output_row: Retained<NSStackView>,
+    output_reveal: Reveal,
     output_popup: Retained<NSPopUpButton>,
-    subs_row: Retained<NSStackView>,
+    subs_reveal: Reveal,
     subs_switch: Retained<NSSwitch>,
-    thumb_row: Retained<NSStackView>,
+    thumb_reveal: Reveal,
     thumb_switch: Retained<NSSwitch>,
     dest_label: Retained<NSTextField>,
     foot_label: Retained<NSTextField>,
     repair_button: Retained<NSButton>,
     profile_id: &'static str,
-    update_version: Option<String>,
-    update_installing: bool,
 }
 
 thread_local! {
@@ -185,12 +277,125 @@ fn with_ui<T>(f: impl FnOnce(&mut Ui) -> T) -> Option<T> {
     UI.with(|cell| cell.borrow_mut().as_mut().map(f))
 }
 
+// ---------- Capsule du champ de lien (facon barre d'adresse Safari) ----------
+
+pub struct CapsuleIvars {
+    focused: Cell<bool>,
+    field: OnceCell<Retained<NSTextField>>,
+}
+
+define_class!(
+    #[unsafe(super(NSView))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "RobloaderUrlCapsule"]
+    #[ivars = CapsuleIvars]
+    pub struct UrlCapsule;
+
+    impl UrlCapsule {
+        #[unsafe(method(wantsUpdateLayer))]
+        fn wants_update_layer(&self) -> bool {
+            true
+        }
+
+        #[unsafe(method(updateLayer))]
+        fn update_layer(&self) {
+            self.paint();
+        }
+
+        #[unsafe(method(viewDidChangeEffectiveAppearance))]
+        fn appearance_changed(&self) {
+            self.setNeedsDisplay(true);
+        }
+
+        #[unsafe(method(mouseDownCanMoveWindow))]
+        fn mouse_down_can_move_window(&self) -> bool {
+            false
+        }
+
+        // Clic dans la capsule hors du texte : focus du champ.
+        #[unsafe(method(mouseDown:))]
+        fn mouse_down(&self, _event: &NSEvent) {
+            if let (Some(window), Some(field)) = (self.window(), self.ivars().field.get()) {
+                window.makeFirstResponder(Some(field));
+            }
+        }
+    }
+);
+
+impl UrlCapsule {
+    fn new(field: &NSTextField, mtm: MainThreadMarker) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(CapsuleIvars {
+            focused: Cell::new(false),
+            field: OnceCell::new(),
+        });
+        let this: Retained<Self> = unsafe {
+            msg_send![super(this), initWithFrame: NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(320.0, 36.0))]
+        };
+        let _ = this.ivars().field.set(retain_ref(field));
+        this.setWantsLayer(true);
+        this
+    }
+
+    fn set_focused(&self, focused: bool) {
+        if self.ivars().focused.replace(focused) != focused {
+            self.setNeedsDisplay(true);
+        }
+    }
+
+    fn is_dark(&self) -> bool {
+        unsafe {
+            let appearance: *mut AnyObject = msg_send![self, effectiveAppearance];
+            if appearance.is_null() {
+                return false;
+            }
+            let names = NSArray::from_retained_slice(&[
+                NSString::from_str("NSAppearanceNameAqua"),
+                NSString::from_str("NSAppearanceNameDarkAqua"),
+            ]);
+            let best: Option<Retained<NSString>> =
+                msg_send![appearance, bestMatchFromAppearancesWithNames: &*names];
+            best.is_some_and(|b| b.to_string() == "NSAppearanceNameDarkAqua")
+        }
+    }
+
+    fn paint(&self) {
+        let dark = self.is_dark();
+        let focused = self.ivars().focused.get();
+        let fill = if dark {
+            NSColor::colorWithWhite_alpha(1.0, 0.10)
+        } else {
+            NSColor::colorWithWhite_alpha(1.0, 0.92)
+        };
+        let border = if focused {
+            NSColor::controlAccentColor()
+        } else if dark {
+            NSColor::colorWithWhite_alpha(1.0, 0.16)
+        } else {
+            NSColor::colorWithWhite_alpha(0.0, 0.14)
+        };
+        unsafe {
+            let layer: *mut AnyObject = msg_send![self, layer];
+            if layer.is_null() {
+                return;
+            }
+            let fill_cg: *mut c_void = msg_send![&*fill, CGColor];
+            let border_cg: *mut c_void = msg_send![&*border, CGColor];
+            let _: () = msg_send![layer, setCornerRadius: 18.0f64];
+            let _: () = msg_send![layer, setBackgroundColor: fill_cg];
+            let _: () = msg_send![layer, setBorderColor: border_cg];
+            let _: () = msg_send![layer, setBorderWidth: if focused { 2.5f64 } else { 1.0f64 }];
+        }
+    }
+}
+
 // ---------- Controleur Obj-C (delegue + cible des actions) ----------
 
 pub struct Ivars {
     app: AppHandle,
+    version: String,
 }
 
+const ID_TITLE: &str = "rl.title";
 const ID_URL: &str = "rl.url";
 const ID_CHIP: &str = "rl.chip";
 const ID_PASTE: &str = "rl.paste";
@@ -234,10 +439,19 @@ define_class!(
             let sender = notification.object();
             self.text_changed(sender.as_deref());
         }
+
+        #[unsafe(method(controlTextDidBeginEditing:))]
+        fn control_text_did_begin_editing(&self, notification: &NSNotification) {
+            self.url_focus_changed(notification, true);
+        }
+
+        #[unsafe(method(controlTextDidEndEditing:))]
+        fn control_text_did_end_editing(&self, notification: &NSNotification) {
+            self.url_focus_changed(notification, false);
+        }
     }
 
     unsafe impl NSTextFieldDelegate for Controller {}
-    unsafe impl NSSearchFieldDelegate for Controller {}
 
     impl Controller {
         #[unsafe(method(onDownload:))]
@@ -245,8 +459,7 @@ define_class!(
             self.request_download();
         }
 
-        // Action du champ de lien / des champs Debut-Fin : seulement sur Entree
-        // (le champ de recherche l'envoie aussi quand on clique sur sa croix).
+        // Action des champs texte : seulement sur Entree (pas en perdant le focus).
         #[unsafe(method(onSubmit:))]
         fn on_submit(&self, _sender: Option<&AnyObject>) {
             if return_key_pressed(self.mtm()) {
@@ -273,11 +486,12 @@ define_class!(
 
         #[unsafe(method(onQuality:))]
         fn on_quality(&self, sender: Option<&AnyObject>) {
-            let Some(control) = sender.and_then(|s| s.downcast_ref::<NSSegmentedControl>()) else {
+            let Some(button) = sender.and_then(|s| s.downcast_ref::<NSButton>()) else {
                 return;
             };
-            let idx = control.selectedSegment().clamp(0, 4) as usize;
+            let idx = button.tag().clamp(0, 4) as usize;
             with_settings(|s| s.quality_label = QUALITY_LABELS[idx].into());
+            with_ui(|ui| select_quality(&ui.quality_buttons, idx));
         }
 
         #[unsafe(method(onSwitch:))]
@@ -304,7 +518,7 @@ define_class!(
             match which {
                 1 => {
                     with_settings(|s| s.clip = on);
-                    with_ui(|ui| reveal(ui, &ui.times_row, on, true));
+                    with_ui(|ui| ui.times_reveal.set(&ui.sidebar_root, on, true));
                 }
                 2 => {
                     let output = with_settings(|s| {
@@ -317,7 +531,7 @@ define_class!(
                     });
                     with_ui(|ui| {
                         fill_outputs(&ui.output_popup, on, &output);
-                        reveal(ui, &ui.output_row, on, true);
+                        ui.output_reveal.set(&ui.sidebar_root, on, true);
                     });
                 }
                 3 => with_settings(|s| s.subs = on),
@@ -359,8 +573,8 @@ define_class!(
 );
 
 impl Controller {
-    fn new(app: AppHandle, mtm: MainThreadMarker) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(Ivars { app });
+    fn new(app: AppHandle, version: String, mtm: MainThreadMarker) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(Ivars { app, version });
         unsafe { msg_send![super(this), init] }
     }
 
@@ -373,10 +587,26 @@ impl Controller {
         let id = identifier.to_string();
         let item = NSToolbarItem::initWithItemIdentifier(NSToolbarItem::alloc(mtm), identifier);
         match id.as_str() {
+            ID_TITLE => {
+                // « Robloader 2.1.7 » a droite des feux, au-dessus du volet.
+                let name = label("Robloader", mtm);
+                name.setFont(Some(&NSFont::systemFontOfSize_weight(15.0, unsafe {
+                    NSFontWeightBold
+                })));
+                let version = label(&self.ivars().version, mtm);
+                version.setFont(Some(&NSFont::systemFontOfSize(13.0)));
+                version.setTextColor(Some(&NSColor::secondaryLabelColor()));
+                let title = hstack(&[&name, &version], mtm);
+                title.setSpacing(6.0);
+                title.setAlignment(NSLayoutAttribute::FirstBaseline);
+                item.setLabel(ns_string!("Robloader"));
+                item.setView(Some(&title));
+                item.setBordered(false);
+            }
             ID_URL => {
-                let field = UI.with(|c| c.borrow().as_ref().map(|ui| ui.url_field.clone()))?;
+                let capsule = UI.with(|c| c.borrow().as_ref().map(|ui| ui.url_capsule.clone()))?;
                 item.setLabel(ns_string!("Lien"));
-                item.setView(Some(&field));
+                item.setView(Some(&capsule));
             }
             ID_CHIP => {
                 item.setLabel(ns_string!("Source"));
@@ -430,6 +660,16 @@ impl Controller {
             }
         });
         Some(item)
+    }
+
+    fn url_focus_changed(&self, notification: &NSNotification, focused: bool) {
+        let Some(sender) = notification.object() else { return };
+        let ptr = Retained::as_ptr(&sender) as *const AnyObject;
+        with_ui(|ui| {
+            if ptr == Retained::as_ptr(&ui.url_field).cast() {
+                ui.url_capsule.set_focused(focused);
+            }
+        });
     }
 
     fn text_changed(&self, sender: Option<&AnyObject>) {
@@ -496,9 +736,12 @@ impl Controller {
 }
 
 fn toolbar_identifiers() -> Retained<NSArray<NSString>> {
-    let sep: &NSString = unsafe { NSToolbarSidebarTrackingSeparatorItemIdentifier };
+    let flexible: &NSString = unsafe { NSToolbarFlexibleSpaceItemIdentifier };
+    let separator: &NSString = unsafe { NSToolbarSidebarTrackingSeparatorItemIdentifier };
     let ids = [
-        NSString::from_str(&sep.to_string()),
+        NSString::from_str(ID_TITLE),
+        NSString::from_str(&flexible.to_string()),
+        NSString::from_str(&separator.to_string()),
         NSString::from_str(ID_URL),
         NSString::from_str(ID_CHIP),
         NSString::from_str(ID_PASTE),
@@ -509,6 +752,11 @@ fn toolbar_identifiers() -> Retained<NSArray<NSString>> {
 }
 
 // ---------- Aides ----------
+
+fn retain_ref<T: objc2::Message>(obj: &T) -> Retained<T> {
+    // Une reference valide pointe sur un objet vivant : retain ne renvoie jamais None.
+    unsafe { Retained::retain(obj as *const T as *mut T) }.expect("objet Obj-C valide")
+}
 
 fn responds(obj: &NSObject, selector: Sel) -> bool {
     obj.respondsToSelector(selector)
@@ -536,24 +784,14 @@ fn return_key_pressed(mtm: MainThreadMarker) -> bool {
     }
 }
 
-// Montre/masque une ligne du volet avec l'animation de pile d'AppKit.
-fn reveal(ui: &Ui, view: &NSView, show: bool, animate: bool) {
-    if view.isHidden() != show {
-        return;
+// Bouton de qualite choisi : teinte de l'accent systeme.
+fn select_quality(buttons: &[Retained<NSButton>], idx: usize) {
+    let accent = NSColor::controlAccentColor();
+    for (i, b) in buttons.iter().enumerate() {
+        let on = i == idx;
+        b.setBezelColor(if on { Some(&accent) } else { None });
+        b.setState(if on { NSControlStateValueOn } else { NSControlStateValueOff });
     }
-    if !animate {
-        view.setHidden(!show);
-        view.setAlphaValue(if show { 1.0 } else { 0.0 });
-        return;
-    }
-    NSAnimationContext::beginGrouping();
-    let ctx = NSAnimationContext::currentContext();
-    ctx.setDuration(0.3);
-    ctx.setAllowsImplicitAnimation(true);
-    view.setHidden(!show);
-    view.setAlphaValue(if show { 1.0 } else { 0.0 });
-    ui.sidebar_stack.layoutSubtreeIfNeeded();
-    NSAnimationContext::endGrouping();
 }
 
 fn fill_outputs(popup: &NSPopUpButton, transcode: bool, selected: &str) {
@@ -577,9 +815,10 @@ fn apply_profile(profile: &'static Profile, animate: bool) {
             chip.setTitle(&NSString::from_str(profile.label));
             set_item_hidden(chip, profile.id == "default");
         }
-        reveal(ui, &ui.quality_section, profile.ladder, animate);
-        reveal(ui, &ui.subs_row, profile.subtitles, animate);
-        reveal(ui, &ui.thumb_row, profile.thumbnail, animate);
+        let root = &ui.sidebar_root;
+        ui.quality_reveal.set(root, profile.ladder, animate);
+        ui.subs_reveal.set(root, profile.subtitles, animate);
+        ui.thumb_reveal.set(root, profile.thumbnail, animate);
     });
 }
 
@@ -632,21 +871,26 @@ fn new_switch(controller: &Controller, on: bool, mtm: MainThreadMarker) -> Retai
     sw
 }
 
-// Ligne « libelle ........ controle », le libelle prend la place libre.
-fn row(text: &str, control: &NSView, mtm: MainThreadMarker) -> Retained<NSStackView> {
+// Ligne « libelle ........ controle ». `label_first` : le libelle ne se
+// tronque jamais (c'est le controle qui cede la place).
+fn row(text: &str, control: &NSView, label_first: bool, mtm: MainThreadMarker) -> Retained<NSStackView> {
     let l = label(text, mtm);
     l.setLineBreakMode(NSLineBreakMode::ByTruncatingTail);
     l.setContentHuggingPriority_forOrientation(1.0, NSLayoutConstraintOrientation::Horizontal);
+    let (label_resist, control_resist) = if label_first { (760.0, 250.0) } else { (250.0, 760.0) };
     l.setContentCompressionResistancePriority_forOrientation(
-        250.0,
+        label_resist,
+        NSLayoutConstraintOrientation::Horizontal,
+    );
+    control.setContentCompressionResistancePriority_forOrientation(
+        control_resist,
         NSLayoutConstraintOrientation::Horizontal,
     );
     let r = hstack(&[&l, control], mtm);
     r.setDistribution(NSStackViewDistribution::Fill);
+    r.heightAnchor().constraintGreaterThanOrEqualToConstant(26.0).setActive(true);
     r
 }
-
-use objc2_app_kit::NSLayoutConstraintOrientation;
 
 fn pin_width(view: &NSView, to: &NSView, inset: f64) {
     let leading = view
@@ -673,33 +917,55 @@ define_class!(
     }
 );
 
-fn build_sidebar(
+fn build_ui(
     controller: &Controller,
     window: Retained<NSWindow>,
     mtm: MainThreadMarker,
 ) -> (Retained<NSView>, Ui) {
     let settings = with_settings(|s| s.clone());
+    const SIDE: f64 = 16.0;
 
-    // Qualite : controle segmente natif (un seul choix).
-    let labels: Vec<Retained<NSString>> = QUALITY_SHORT.iter().map(|q| NSString::from_str(q)).collect();
-    let quality = unsafe {
-        NSSegmentedControl::segmentedControlWithLabels_trackingMode_target_action(
-            &NSArray::from_retained_slice(&labels),
-            NSSegmentSwitchTracking::SelectOne,
-            Some(controller.as_target()),
-            Some(sel!(onQuality:)),
-            mtm,
-        )
-    };
-    quality.setSegmentDistribution(NSSegmentDistribution::FillEqually);
-    quality.setSelectedSegment(0);
+    // Qualite : grille 3 colonnes de boutons natifs, le choix teinte d'accent.
+    let quality_buttons: Vec<Retained<NSButton>> = QUALITY_SHORT
+        .iter()
+        .enumerate()
+        .map(|(i, q)| {
+            let b = unsafe {
+                NSButton::buttonWithTitle_target_action(
+                    &NSString::from_str(q),
+                    Some(controller.as_target()),
+                    Some(sel!(onQuality:)),
+                    mtm,
+                )
+            };
+            b.setTag(i as isize);
+            b.setToolTip(Some(&NSString::from_str(QUALITY_LABELS[i])));
+            b
+        })
+        .collect();
+    let idx = QUALITY_LABELS
+        .iter()
+        .position(|q| *q == settings.quality_label)
+        .unwrap_or(0);
+    select_quality(&quality_buttons, idx);
+    let filler = NSView::new(mtm);
+    let grid_row1 = hstack(&[&quality_buttons[0], &quality_buttons[1], &quality_buttons[2]], mtm);
+    let grid_row2 = hstack(&[&quality_buttons[3], &quality_buttons[4], &filler], mtm);
+    for r in [&grid_row1, &grid_row2] {
+        r.setDistribution(NSStackViewDistribution::FillEqually);
+        r.setSpacing(6.0);
+    }
     let quality_header = section_header("Qualité", mtm);
-    let quality_section = vstack(&[&quality_header, &quality], 8.0, mtm);
+    let quality_content = vstack(&[&quality_header, &grid_row1, &grid_row2], 6.0, mtm);
+    pin_width(&grid_row1, &quality_content, 0.0);
+    pin_width(&grid_row2, &quality_content, 0.0);
+    quality_content.setCustomSpacing_afterView(8.0, &quality_header);
+    let quality_reveal = Reveal::new(&quality_content, 0.0, 22.0, true, mtm);
 
     // Options.
     let options_header = section_header("Options", mtm);
     let clip_switch = new_switch(controller, settings.clip, mtm);
-    let clip_row = row("Extraire un passage", &clip_switch, mtm);
+    let clip_row = row("Extraire un passage", &clip_switch, true, mtm);
 
     let start_field = NSTextField::textFieldWithString(ns_string!(""), mtm);
     let end_field = NSTextField::textFieldWithString(ns_string!(""), mtm);
@@ -718,13 +984,15 @@ fn build_sidebar(
         l.setTextColor(Some(&NSColor::secondaryLabelColor()));
     }
     let times_row = hstack(&[&start_label, &start_field, &end_label, &end_field], mtm);
+    times_row.setCustomSpacing_afterView(14.0, &start_field);
+    let times_reveal = Reveal::new(&times_row, 10.0, 0.0, settings.clip, mtm);
 
     let transcode_switch = new_switch(controller, settings.transcode, mtm);
-    let transcode_row = row("Transcodage", &transcode_switch, mtm);
+    let transcode_row = row("Transcodage", &transcode_switch, true, mtm);
 
     let output_popup = NSPopUpButton::initWithFrame_pullsDown(
         NSPopUpButton::alloc(mtm),
-        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(140.0, 24.0)),
+        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(120.0, 24.0)),
         false,
     );
     fill_outputs(&output_popup, settings.transcode, &settings.output);
@@ -732,12 +1000,15 @@ fn build_sidebar(
         output_popup.setTarget(Some(controller.as_target()));
         output_popup.setAction(Some(sel!(onOutput:)));
     }
-    let output_row = row("Format de sortie", &output_popup, mtm);
+    let output_row = row("Format de sortie", &output_popup, true, mtm);
+    let output_reveal = Reveal::new(&output_row, 10.0, 0.0, settings.transcode, mtm);
 
     let subs_switch = new_switch(controller, settings.subs, mtm);
-    let subs_row = row("Sous-titres (.srt)", &subs_switch, mtm);
+    let subs_row = row("Sous-titres (.srt)", &subs_switch, true, mtm);
+    let subs_reveal = Reveal::new(&subs_row, 10.0, 0.0, true, mtm);
     let thumb_switch = new_switch(controller, settings.thumb, mtm);
-    let thumb_row = row("Miniature", &thumb_switch, mtm);
+    let thumb_row = row("Miniature", &thumb_switch, true, mtm);
+    let thumb_reveal = Reveal::new(&thumb_row, 10.0, 0.0, true, mtm);
 
     // Destination.
     let dest_header = section_header("Destination", mtm);
@@ -787,14 +1058,14 @@ fn build_sidebar(
 
     let stack = vstack(
         &[
-            &quality_section,
+            &quality_reveal.container,
             &options_header,
             &clip_row,
-            &times_row,
+            &times_reveal.container,
             &transcode_row,
-            &output_row,
-            &subs_row,
-            &thumb_row,
+            &output_reveal.container,
+            &subs_reveal.container,
+            &thumb_reveal.container,
             &dest_header,
             &dest_label,
             &dest_buttons,
@@ -804,41 +1075,34 @@ fn build_sidebar(
         10.0,
         mtm,
     );
-    stack.setEdgeInsets(NSEdgeInsets { top: 10.0, left: 16.0, bottom: 16.0, right: 16.0 });
-    stack.setCustomSpacing_afterView(22.0, &quality_section);
-    stack.setCustomSpacing_afterView(22.0, &thumb_row);
+    stack.setEdgeInsets(NSEdgeInsets { top: 10.0, left: SIDE, bottom: SIDE, right: SIDE });
+    // Les marges des zones revelables sont dans leur conteneur.
+    for v in [
+        &*quality_reveal.container,
+        &clip_row,
+        &output_reveal.container,
+        &subs_reveal.container,
+    ] {
+        stack.setCustomSpacing_afterView(0.0, v);
+    }
+    stack.setCustomSpacing_afterView(22.0, &thumb_reveal.container);
     stack.setCustomSpacing_afterView(22.0, &dest_buttons);
     stack.setTranslatesAutoresizingMaskIntoConstraints(false);
 
-    // Lignes pleine largeur.
     for v in [
-        &*quality_section as &NSView,
-        &quality,
+        &*quality_reveal.container,
         &clip_row,
-        &times_row,
+        &times_reveal.container,
         &transcode_row,
-        &output_row,
-        &subs_row,
-        &thumb_row,
+        &output_reveal.container,
+        &subs_reveal.container,
+        &thumb_reveal.container,
         &dest_label,
         &dest_buttons,
         &foot_label,
     ] {
-        if v as *const NSView == &*quality as *const NSSegmentedControl as *const NSView {
-            pin_width(v, &quality_section, 0.0);
-        } else {
-            pin_width(v, &stack, 16.0);
-        }
+        pin_width(v, &stack, SIDE);
     }
-    for r in [&clip_row, &transcode_row, &output_row, &subs_row, &thumb_row] {
-        r.heightAnchor().constraintGreaterThanOrEqualToConstant(26.0).setActive(true);
-    }
-
-    // Etat initial des revelations.
-    times_row.setHidden(!settings.clip);
-    times_row.setAlphaValue(if settings.clip { 1.0 } else { 0.0 });
-    output_row.setHidden(!settings.transcode);
-    output_row.setAlphaValue(if settings.transcode { 1.0 } else { 0.0 });
 
     // Defilement si la fenetre est basse (les marges sous la barre d'outils
     // sont gerees par automaticallyAdjustsContentInsets).
@@ -862,51 +1126,68 @@ fn build_sidebar(
     ];
     NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&constraints));
 
-    // Champ de lien (pose dans la barre d'outils par le delegue).
-    let url_field = NSSearchField::new(mtm);
+    // Capsule du lien : icone + champ sans bordure, dessin facon Safari.
+    let url_field = NSTextField::textFieldWithString(ns_string!(""), mtm);
+    url_field.setBordered(false);
+    url_field.setBezeled(false);
+    url_field.setDrawsBackground(false);
+    url_field.setFocusRingType(NSFocusRingType::None);
+    url_field.setUsesSingleLineMode(true);
+    url_field.setLineBreakMode(NSLineBreakMode::ByTruncatingTail);
+    url_field.setFont(Some(&NSFont::systemFontOfSize(13.0)));
     url_field.setPlaceholderString(Some(&NSString::from_str(DEFAULT_PROFILE.placeholder)));
     unsafe {
         url_field.setDelegate(Some(ProtocolObject::from_ref(controller)));
         url_field.setTarget(Some(controller.as_target()));
         url_field.setAction(Some(sel!(onSubmit:)));
-        let _: () = msg_send![&*url_field, setSendsWholeSearchString: true];
-        // Icone de lien a la place de la loupe.
-        let cell: *mut AnyObject = msg_send![&*url_field, cell];
-        if !cell.is_null() {
-            let button_cell: *mut AnyObject = msg_send![cell, searchButtonCell];
-            if let (false, Some(img)) = (button_cell.is_null(), symbol("link", "Lien")) {
-                let _: () = msg_send![button_cell, setImage: &*img];
-            }
-        }
     }
-    url_field.widthAnchor().constraintGreaterThanOrEqualToConstant(220.0).setActive(true);
-    let max = url_field.widthAnchor().constraintLessThanOrEqualToConstant(900.0);
+    let url_capsule = UrlCapsule::new(&url_field, mtm);
+    let icon = match symbol("link", "Lien") {
+        Some(img) => NSImageView::imageViewWithImage(&img, mtm),
+        None => NSImageView::new(mtm),
+    };
+    icon.setContentTintColor(Some(&NSColor::secondaryLabelColor()));
+    for v in [&*icon as &NSView, &url_field] {
+        v.setTranslatesAutoresizingMaskIntoConstraints(false);
+        url_capsule.addSubview(v);
+    }
+    let capsule_constraints = [
+        url_capsule.heightAnchor().constraintEqualToConstant(36.0),
+        url_capsule.widthAnchor().constraintGreaterThanOrEqualToConstant(260.0),
+        icon.leadingAnchor().constraintEqualToAnchor_constant(&url_capsule.leadingAnchor(), 13.0),
+        icon.centerYAnchor().constraintEqualToAnchor(&url_capsule.centerYAnchor()),
+        url_field.leadingAnchor().constraintEqualToAnchor_constant(&icon.trailingAnchor(), 8.0),
+        url_field.trailingAnchor().constraintEqualToAnchor_constant(&url_capsule.trailingAnchor(), -14.0),
+        url_field.centerYAnchor().constraintEqualToAnchor(&url_capsule.centerYAnchor()),
+    ];
+    NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&capsule_constraints));
+    let max = url_capsule.widthAnchor().constraintLessThanOrEqualToConstant(900.0);
     max.setActive(true);
 
     let ui = Ui {
         window,
+        url_capsule,
         url_field,
         chip_item: None,
         update_item: None,
-        sidebar_stack: stack,
-        quality_section,
+        sidebar_root: Retained::into_super(document),
+        quality_reveal,
+        quality_buttons,
         clip_switch,
-        times_row,
+        times_reveal,
         start_field,
         end_field,
         transcode_switch,
-        output_row,
+        output_reveal,
         output_popup,
-        subs_row,
+        subs_reveal,
         subs_switch,
-        thumb_row,
+        thumb_reveal,
         thumb_switch,
         dest_label,
         foot_label,
         repair_button,
         profile_id: DEFAULT_PROFILE.id,
-        update_version: None,
-        update_installing: false,
     };
     (Retained::into_super(scroll), ui)
 }
@@ -925,8 +1206,9 @@ pub fn install(app: &AppHandle, window: &tauri::WebviewWindow) -> bool {
             None => return false,
         };
 
-    let controller = Controller::new(app.clone(), mtm);
-    let (sidebar_view, ui) = build_sidebar(&controller, ns_window.clone(), mtm);
+    let version = app.package_info().version.to_string();
+    let controller = Controller::new(app.clone(), version, mtm);
+    let (sidebar_view, ui) = build_ui(&controller, ns_window.clone(), mtm);
 
     // Volet systeme + webview en panneau de contenu.
     let Some(web_container) = ns_window.contentView() else {
@@ -963,23 +1245,19 @@ pub fn install(app: &AppHandle, window: &tauri::WebviewWindow) -> bool {
     UI.with(|c| *c.borrow_mut() = Some(ui));
     CONTROLLER.with(|c| *c.borrow_mut() = Some(controller.clone()));
 
-    // Barre d'outils unifiee.
+    // Barre d'outils unifiee ; le titre est un item au-dessus du volet.
     let toolbar = NSToolbar::initWithIdentifier(NSToolbar::alloc(mtm), ns_string!("RobloaderToolbar"));
     toolbar.setDelegate(Some(ProtocolObject::from_ref(&*controller)));
     toolbar.setAllowsUserCustomization(false);
-    toolbar.setDisplayMode(objc2_app_kit::NSToolbarDisplayMode::IconOnly);
+    toolbar.setDisplayMode(NSToolbarDisplayMode::IconOnly);
     ns_window.setToolbar(Some(&toolbar));
     ns_window.setToolbarStyle(NSWindowToolbarStyle::Unified);
-    ns_window.setTitleVisibility(NSWindowTitleVisibility::Visible);
-    ns_window.setTitle(&NSString::from_str(&format!(
-        "Robloader {}",
-        app.package_info().version
-    )));
+    ns_window.setTitleVisibility(NSWindowTitleVisibility::Hidden);
     INSTALLED.store(true, Ordering::Relaxed);
     true
 }
 
-// ---------- Commandes appelees par le front ----------
+// ---------- Fonctions appelees par les commandes du front (lib.rs) ----------
 
 fn on_main(app: &AppHandle, f: impl FnOnce() + Send + 'static) {
     let _ = app.run_on_main_thread(f);
@@ -1023,8 +1301,6 @@ pub fn set_env(
 pub fn set_update(app: AppHandle, version: Option<String>, installing: bool) {
     on_main(&app, move || {
         with_ui(|ui| {
-            ui.update_version = version.clone();
-            ui.update_installing = installing;
             if let Some(item) = &ui.update_item {
                 set_item_hidden(item, version.is_none());
                 item.setEnabled(!installing);

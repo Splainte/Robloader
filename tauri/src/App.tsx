@@ -291,6 +291,65 @@ function TaskCard({
   );
 }
 
+// ------------------------------------------------------------------
+// Test visuel (menu macOS) : file factice pour eprouver defilement,
+// barre d'outils et flou. Ids negatifs = jamais envoyes au moteur.
+// ------------------------------------------------------------------
+const FAKE_TITLES = [
+  "Test du Pixel 10 Pro : le meilleur photophone de l'année ?",
+  "Galaxy Z Fold8 : prise en main",
+  "iPhone 17 Pro vs Galaxy S26 Ultra : le comparatif",
+  "Keynote Apple septembre 2026 : résumé en 12 minutes",
+  "Test OnePlus 15 : la charge 120 W en conditions réelles",
+  "Les meilleurs écouteurs à moins de 100 €",
+  "Xiaomi 17 Ultra : le test complet",
+  "Android 17 : les 10 nouveautés à connaître",
+  "MacBook Air M5 : faut-il craquer ?",
+  "Nothing Phone (4) démonté pièce par pièce",
+];
+
+function fakeThumb(hue: number) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90"><defs><linearGradient id="g" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue},70%,58%)"/><stop offset="1" stop-color="hsl(${(hue + 40) % 360},60%,30%)"/></linearGradient></defs><rect width="160" height="90" fill="url(#g)"/></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+function makeVisualTestTasks(): Task[] {
+  const out: Task[] = [];
+  for (let i = 0; i < 40; i++) {
+    const kind = i % 8;
+    const base: Task = {
+      id: -(Date.now() % 1_000_000) * 100 - i - 1,
+      title: `${FAKE_TITLES[i % FAKE_TITLES.length]}${i >= FAKE_TITLES.length ? ` (${i + 1})` : ""}`,
+      thumbnail: i % 5 === 4 ? undefined : fakeThumb((i * 37) % 360),
+      status: "",
+      statusKind: "info",
+      percent: 0,
+      indeterminate: false,
+      action: "cancel",
+    };
+    if (kind === 0) out.push({ ...base, status: "Téléchargement… 0%", percent: (i * 7) % 60 / 100 });
+    else if (kind === 1) out.push({ ...base, status: "Conversion H.265… 0%", percent: (i * 5) % 50 / 100 });
+    else if (kind === 2) out.push({ ...base, status: "Analyse de la vidéo…", indeterminate: true });
+    else if (kind === 3) out.push({ ...base, status: "Échec : vidéo réservée aux membres", statusKind: "err", action: "repair" });
+    else if (kind === 4) out.push({ ...base, status: "Annulé", statusKind: "warn", action: "none" });
+    else out.push({ ...base, status: "Terminé ✓ Vidéo native (.mp4)", statusKind: "ok", percent: 1, action: "open", finalPath: "/tmp" });
+  }
+  return out;
+}
+
+function tickVisualTest(t: Task): Task {
+  if (t.id >= 0 || t.action !== "cancel" || t.indeterminate) return t;
+  const dl = t.status.startsWith("Téléchargement");
+  const p = Math.min(1, t.percent + (dl ? 0.012 : 0.007));
+  if (p >= 1) {
+    return dl
+      ? { ...t, percent: 0, status: "Conversion H.265… 0%" }
+      : { ...t, percent: 1, status: "Terminé ✓ HEVC", statusKind: "ok", action: "open", finalPath: "/tmp" };
+  }
+  const label = dl ? "Téléchargement…" : "Conversion H.265…";
+  return { ...t, percent: p, status: `${label} ${Math.round(p * 100)}%` };
+}
+
 function App() {
   const [url, setUrl] = useState("");
   const [quality, setQuality] = useState(QUALITY_LABELS[0]);
@@ -404,6 +463,12 @@ function App() {
       listen("mac://reveal-destination", () => macHandlers.current.revealDestination()),
       listen("mac://repair", () => macHandlers.current.repair()),
       listen("mac://install-update", () => macHandlers.current.installUpdate()),
+      listen<boolean>("mac://visual-test", (e) =>
+        setTasks((prev) => [
+          ...(e.payload ? makeVisualTestTasks() : []),
+          ...prev.filter((t) => t.id > 0),
+        ])
+      ),
     ];
     return () => subs.forEach((p) => p.then((f) => f()));
   }, []);
@@ -482,7 +547,23 @@ function App() {
     setEnd("");
   }
 
+  // Test visuel : les taches factices (id < 0) progressent toutes seules.
+  const hasFakeRunning = tasks.some((t) => t.id < 0 && t.action === "cancel");
+  useEffect(() => {
+    if (!hasFakeRunning) return;
+    const timer = window.setInterval(() => setTasks((prev) => prev.map(tickVisualTest)), 400);
+    return () => window.clearInterval(timer);
+  }, [hasFakeRunning]);
+
   function cancelTask(id: number) {
+    if (id < 0) {
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.id === id ? { ...t, status: "Annulé", statusKind: "warn", action: "none", indeterminate: false } : t
+        )
+      );
+      return;
+    }
     invoke("cancel_download", { id }).catch(() => {});
   }
   function openFolder(path: string) {
