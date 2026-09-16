@@ -23,7 +23,7 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, ProtocolObject, Sel};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
-    NSAnimationContext, NSApplication, NSButton, NSColor, NSControlStateValueOff,
+    NSApplication, NSButton, NSColor, NSControlStateValueOff,
     NSControlStateValueOn, NSControlTextEditingDelegate, NSEvent, NSEventType, NSFocusRingType,
     NSFont, NSFontWeightBold, NSFontWeightSemibold, NSImage, NSImageView, NSLayoutAttribute,
     NSLayoutConstraint, NSLayoutConstraintOrientation, NSLineBreakMode, NSPasteboard,
@@ -149,10 +149,9 @@ struct DownloadRequest {
     settings: Settings,
 }
 
-// ---------- Revelation animee d'une zone du volet ----------
+// ---------- Zone du volet affichee/masquee ----------
 //
-// Un conteneur a hauteur contrainte (0 = ferme) masque son contenu comme un
-// rideau : le contenu reste epingle en haut, la ligne suivante glisse.
+// Un conteneur a hauteur contrainte (0 = ferme) masque son contenu.
 // Les marges sont DANS le conteneur, pour qu'une zone fermee ne laisse aucun
 // espace dans la pile.
 
@@ -205,38 +204,13 @@ impl Reveal {
         self.height.constant() > 0.5
     }
 
-    fn set(&self, root: &NSView, open: bool, animate: bool) {
+    // Sans animation (choix de Robin) : la zone apparait/disparait d'un coup.
+    fn set(&self, open: bool) {
         if self.is_open() == open {
             return;
         }
-        let target = if open { self.open_height() } else { 0.0 };
-        if !animate {
-            self.height.setConstant(target);
-            self.container.setAlphaValue(if open { 1.0 } else { 0.0 });
-            return;
-        }
-        NSAnimationContext::beginGrouping();
-        let ctx = NSAnimationContext::currentContext();
-        ctx.setDuration(if open { 0.28 } else { 0.22 });
-        ctx.setAllowsImplicitAnimation(true);
-        set_ease_in_out(&ctx);
-        self.height.setConstant(target);
+        self.height.setConstant(if open { self.open_height() } else { 0.0 });
         self.container.setAlphaValue(if open { 1.0 } else { 0.0 });
-        root.layoutSubtreeIfNeeded();
-        NSAnimationContext::endGrouping();
-    }
-}
-
-// CAMediaTimingFunction sans dependre d'objc2-quartz-core.
-fn set_ease_in_out(ctx: &NSAnimationContext) {
-    if let Some(cls) = AnyClass::get(c"CAMediaTimingFunction") {
-        unsafe {
-            let f: *mut AnyObject =
-                msg_send![cls, functionWithName: ns_string!("easeInEaseOut")];
-            if !f.is_null() {
-                let _: () = msg_send![ctx, setTimingFunction: f];
-            }
-        }
     }
 }
 
@@ -248,7 +222,6 @@ struct Ui {
     url_field: Retained<NSTextField>,
     chip_item: Option<Retained<NSToolbarItem>>,
     update_item: Option<Retained<NSToolbarItem>>,
-    sidebar_root: Retained<NSView>,
     quality_reveal: Reveal,
     quality_buttons: Vec<Retained<NSButton>>,
     clip_switch: Retained<NSSwitch>,
@@ -461,7 +434,7 @@ define_class!(
                 ui.url_field.setStringValue(&NSString::from_str(&text));
                 ui.window.makeFirstResponder(Some(&ui.url_field));
             });
-            apply_profile(detect_profile(&text), true);
+            apply_profile(detect_profile(&text));
         }
 
         #[unsafe(method(onQuality:))]
@@ -498,7 +471,7 @@ define_class!(
             match which {
                 1 => {
                     with_settings(|s| s.clip = on);
-                    with_ui(|ui| ui.times_reveal.set(&ui.sidebar_root, on, true));
+                    with_ui(|ui| ui.times_reveal.set(on));
                 }
                 2 => {
                     let output = with_settings(|s| {
@@ -511,7 +484,7 @@ define_class!(
                     });
                     with_ui(|ui| {
                         fill_outputs(&ui.output_popup, on, &output);
-                        ui.output_reveal.set(&ui.sidebar_root, on, true);
+                        ui.output_reveal.set(on);
                     });
                 }
                 3 => with_settings(|s| s.subs = on),
@@ -674,7 +647,7 @@ impl Controller {
         })
         .unwrap_or(Which::None);
         match which {
-            Which::Url(u) => apply_profile(detect_profile(&u), true),
+            Which::Url(u) => apply_profile(detect_profile(&u)),
             Which::Start(v) => with_settings(|s| s.start = v.trim().into()),
             Which::End(v) => with_settings(|s| s.end = v.trim().into()),
             Which::None => {}
@@ -710,7 +683,7 @@ impl Controller {
                 s.start.clear();
                 s.end.clear();
             });
-            apply_profile(&DEFAULT_PROFILE, true);
+            apply_profile(&DEFAULT_PROFILE);
         }
     }
 }
@@ -787,7 +760,7 @@ fn fill_outputs(popup: &NSPopUpButton, transcode: bool, selected: &str) {
 }
 
 // Adapte le champ, la pastille et les sections au site detecte.
-fn apply_profile(profile: &'static Profile, animate: bool) {
+fn apply_profile(profile: &'static Profile) {
     with_ui(|ui| {
         if ui.profile_id == profile.id {
             return;
@@ -799,10 +772,9 @@ fn apply_profile(profile: &'static Profile, animate: bool) {
             chip.setTitle(&NSString::from_str(profile.label));
             set_item_hidden(chip, profile.id == "default");
         }
-        let root = &ui.sidebar_root;
-        ui.quality_reveal.set(root, profile.ladder, animate);
-        ui.subs_reveal.set(root, profile.subtitles, animate);
-        ui.thumb_reveal.set(root, profile.thumbnail, animate);
+        ui.quality_reveal.set(profile.ladder);
+        ui.subs_reveal.set(profile.subtitles);
+        ui.thumb_reveal.set(profile.thumbnail);
     });
 }
 
@@ -1241,7 +1213,6 @@ fn build_ui(
         url_field,
         chip_item: None,
         update_item: None,
-        sidebar_root: Retained::into_super(document),
         quality_reveal,
         quality_buttons,
         clip_switch,
