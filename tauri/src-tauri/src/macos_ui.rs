@@ -221,6 +221,7 @@ impl Reveal {
 struct Ui {
     window: Retained<NSWindow>,
     url_capsule: Retained<UrlCapsule>,
+    update_pill: Retained<UpdatePill>,
     url_field: Retained<NSTextField>,
     chip_item: Option<Retained<NSToolbarItem>>,
     update_item: Option<Retained<NSToolbarItem>>,
@@ -360,6 +361,215 @@ impl UrlCapsule {
             let _: () = msg_send![layer, setBackgroundColor: fill_cg];
             let _: () = msg_send![layer, setBorderColor: border_cg];
             let _: () = msg_send![layer, setBorderWidth: if focused { 2.5f64 } else { 0.0f64 }];
+        }
+    }
+}
+
+// ---------- Bouton « Mise a jour » : capsule verte + loupiote ----------
+
+pub struct PillIvars {
+    enabled: Cell<bool>,
+    pressed: Cell<bool>,
+    label: OnceCell<Retained<NSTextField>>,
+    led: OnceCell<Retained<NSView>>,
+}
+
+const BREATHE_KEY: &str = "rl.breathe";
+
+define_class!(
+    #[unsafe(super(NSView))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "RobloaderUpdatePill"]
+    #[ivars = PillIvars]
+    pub struct UpdatePill;
+
+    impl UpdatePill {
+        #[unsafe(method(wantsUpdateLayer))]
+        fn wants_update_layer(&self) -> bool {
+            true
+        }
+
+        #[unsafe(method(updateLayer))]
+        fn update_layer(&self) {
+            self.paint();
+        }
+
+        #[unsafe(method(viewDidChangeEffectiveAppearance))]
+        fn appearance_changed(&self) {
+            self.setNeedsDisplay(true);
+        }
+
+        // La barre d'outils peut recreer les couches (item masque puis
+        // affiche) : l'animation est reposee a chaque rattachement.
+        #[unsafe(method(viewDidMoveToWindow))]
+        fn did_move_to_window(&self) {
+            self.update_breathing();
+        }
+
+        #[unsafe(method(mouseDownCanMoveWindow))]
+        fn mouse_down_can_move_window(&self) -> bool {
+            false
+        }
+
+        #[unsafe(method(acceptsFirstMouse:))]
+        fn accepts_first_mouse(&self, _event: Option<&NSEvent>) -> bool {
+            true
+        }
+
+        // Le libelle et la loupiote ne captent pas le clic : tout va a la capsule.
+        #[unsafe(method(hitTest:))]
+        fn hit_test(&self, point: NSPoint) -> *mut NSView {
+            let superview = unsafe { self.superview() };
+            let local = self.convertPoint_fromView(point, superview.as_deref());
+            if self.contains(local) {
+                self as *const Self as *mut NSView
+            } else {
+                std::ptr::null_mut()
+            }
+        }
+
+        #[unsafe(method(mouseDown:))]
+        fn mouse_down(&self, _event: &NSEvent) {
+            if self.ivars().enabled.get() {
+                self.ivars().pressed.set(true);
+                self.setNeedsDisplay(true);
+            }
+        }
+
+        #[unsafe(method(mouseUp:))]
+        fn mouse_up(&self, event: &NSEvent) {
+            let was_pressed = self.ivars().pressed.replace(false);
+            self.setNeedsDisplay(true);
+            let local = self.convertPoint_fromView(event.locationInWindow(), None);
+            if was_pressed && self.ivars().enabled.get() && self.contains(local) {
+                let controller = CONTROLLER.with(|c| c.try_borrow().ok().and_then(|c| c.clone()));
+                if let Some(controller) = controller {
+                    let _: () = unsafe { msg_send![&*controller, onUpdate: None::<&AnyObject>] };
+                }
+            }
+        }
+    }
+);
+
+impl UpdatePill {
+    fn new(mtm: MainThreadMarker) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(PillIvars {
+            enabled: Cell::new(true),
+            pressed: Cell::new(false),
+            label: OnceCell::new(),
+            led: OnceCell::new(),
+        });
+        let this: Retained<Self> = unsafe {
+            msg_send![super(this), initWithFrame: NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(130.0, 32.0))]
+        };
+        this.setWantsLayer(true);
+
+        let led = NSView::new(mtm);
+        led.setWantsLayer(true);
+        unsafe {
+            let layer: *mut AnyObject = msg_send![&*led, layer];
+            if !layer.is_null() {
+                let white = NSColor::whiteColor();
+                let white_cg: *mut c_void = msg_send![&*white, CGColor];
+                let _: () = msg_send![layer, setBackgroundColor: white_cg];
+                let _: () = msg_send![layer, setCornerRadius: 4.0f64];
+            }
+        }
+        let text = label("Mise à jour", mtm);
+        text.setFont(Some(&NSFont::systemFontOfSize_weight(13.0, unsafe { NSFontWeightSemibold })));
+        text.setTextColor(Some(&NSColor::whiteColor()));
+
+        let stack = hstack(&[&led, &text], mtm);
+        stack.setSpacing(7.0);
+        stack.setTranslatesAutoresizingMaskIntoConstraints(false);
+        this.addSubview(&stack);
+        NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&[
+            led.widthAnchor().constraintEqualToConstant(8.0),
+            led.heightAnchor().constraintEqualToConstant(8.0),
+            this.heightAnchor().constraintEqualToConstant(32.0),
+            stack.centerYAnchor().constraintEqualToAnchor(&this.centerYAnchor()),
+            stack.leadingAnchor().constraintEqualToAnchor_constant(&this.leadingAnchor(), 13.0),
+            this.trailingAnchor().constraintEqualToAnchor_constant(&stack.trailingAnchor(), 15.0),
+        ]));
+        this.setToolTip(Some(ns_string!("Installer la mise à jour et relancer")));
+
+        let _ = this.ivars().label.set(text);
+        let _ = this.ivars().led.set(led);
+        this
+    }
+
+    fn contains(&self, p: NSPoint) -> bool {
+        let b = self.bounds();
+        p.x >= 0.0 && p.y >= 0.0 && p.x <= b.size.width && p.y <= b.size.height
+    }
+
+    /// Cliquable + loupiote animee, ou « Installation… » grise et immobile.
+    fn set_state(&self, enabled: bool) {
+        self.ivars().enabled.set(enabled);
+        if let Some(text) = self.ivars().label.get() {
+            let title = if enabled { "Mise à jour" } else { "Installation…" };
+            text.setStringValue(&NSString::from_str(title));
+        }
+        self.setAlphaValue(if enabled { 1.0 } else { 0.6 });
+        self.update_breathing();
+        self.setNeedsDisplay(true);
+    }
+
+    fn paint(&self) {
+        let pressed = self.ivars().pressed.get();
+        let green = NSColor::systemGreenColor();
+        let fill = if pressed { green.colorWithAlphaComponent(0.8) } else { green };
+        let height = self.bounds().size.height;
+        unsafe {
+            let layer: *mut AnyObject = msg_send![self, layer];
+            if layer.is_null() {
+                return;
+            }
+            let fill_cg: *mut c_void = msg_send![&*fill, CGColor];
+            let _: () = msg_send![layer, setBackgroundColor: fill_cg];
+            let _: () = msg_send![layer, setCornerRadius: height / 2.0];
+        }
+    }
+
+    // Loupiote qui « respire » (Core Animation, tourne hors du thread
+    // principal). Coupee si « Reduire les animations » est actif.
+    fn update_breathing(&self) {
+        let Some(led) = self.ivars().led.get() else { return };
+        unsafe {
+            let layer: *mut AnyObject = msg_send![&**led, layer];
+            if layer.is_null() {
+                return;
+            }
+            let key = NSString::from_str(BREATHE_KEY);
+            let _: () = msg_send![layer, removeAnimationForKey: &*key];
+            let reduce_motion = AnyClass::get(c"NSWorkspace")
+                .map(|cls| {
+                    let ws: *mut AnyObject = msg_send![cls, sharedWorkspace];
+                    let reduce: bool = msg_send![ws, accessibilityDisplayShouldReduceMotion];
+                    reduce
+                })
+                .unwrap_or(false);
+            if !self.ivars().enabled.get() || reduce_motion || self.window().is_none() {
+                return;
+            }
+            let (Some(anim_cls), Some(timing_cls)) =
+                (AnyClass::get(c"CABasicAnimation"), AnyClass::get(c"CAMediaTimingFunction"))
+            else {
+                return;
+            };
+            let anim: *mut AnyObject = msg_send![anim_cls, animationWithKeyPath: ns_string!("opacity")];
+            let from = NSNumber::new_f64(1.0);
+            let to = NSNumber::new_f64(0.3);
+            let _: () = msg_send![anim, setFromValue: &*from];
+            let _: () = msg_send![anim, setToValue: &*to];
+            let _: () = msg_send![anim, setDuration: 1.0f64];
+            let _: () = msg_send![anim, setAutoreverses: true];
+            let _: () = msg_send![anim, setRepeatCount: f32::INFINITY];
+            let _: () = msg_send![anim, setRemovedOnCompletion: false];
+            let timing: *mut AnyObject =
+                msg_send![timing_cls, functionWithName: ns_string!("easeInEaseOut")];
+            let _: () = msg_send![anim, setTimingFunction: timing];
+            let _: () = msg_send![layer, addAnimation: anim, forKey: &*key];
         }
     }
 }
@@ -599,13 +809,11 @@ impl Controller {
                 }
             }
             ID_UPDATE => {
+                // Capsule verte maison (loupiote qui respire) : un item standard
+                // ne peut ni etre teinte en vert ni anime.
+                let pill = with_ui(|ui| ui.update_pill.clone())?;
                 item.setLabel(ns_string!("Mise à jour"));
-                item.setTitle(ns_string!("Mise à jour"));
-                item.setBordered(true);
-                unsafe {
-                    item.setTarget(Some(self.as_target()));
-                    item.setAction(Some(sel!(onUpdate:)));
-                }
+                item.setView(Some(&pill));
                 set_item_hidden(&item, true);
             }
             ID_DOWNLOAD => {
@@ -1200,6 +1408,7 @@ fn build_ui(
         url_field.setAction(Some(sel!(onSubmit:)));
     }
     let url_capsule = UrlCapsule::new(&url_field, mtm);
+    let update_pill = UpdatePill::new(mtm);
     let icon = match symbol("link", "Lien") {
         Some(img) => NSImageView::imageViewWithImage(&img, mtm),
         None => NSImageView::new(mtm),
@@ -1227,6 +1436,7 @@ fn build_ui(
     let ui = Ui {
         window,
         url_capsule,
+        update_pill,
         url_field,
         chip_item: None,
         update_item: None,
@@ -1359,16 +1569,14 @@ pub fn set_env(
 pub fn set_update(app: AppHandle, version: Option<String>, installing: bool) {
     on_main(&app, move || {
         with_ui(|ui| {
+            ui.update_pill.set_state(!installing);
+            if let Some(v) = &version {
+                ui.update_pill.setToolTip(Some(&NSString::from_str(&format!(
+                    "Installer la version {v} et relancer"
+                ))));
+            }
             if let Some(item) = &ui.update_item {
                 set_item_hidden(item, version.is_none());
-                item.setEnabled(!installing);
-                let title = if installing { "Installation…" } else { "Mise à jour" };
-                item.setTitle(&NSString::from_str(title));
-                if let Some(v) = &version {
-                    item.setToolTip(Some(&NSString::from_str(&format!(
-                        "Installer la version {v} et relancer"
-                    ))));
-                }
             }
         });
     });

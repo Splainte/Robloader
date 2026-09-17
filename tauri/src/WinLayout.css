@@ -176,6 +176,57 @@
   background: var(--w-accent);
   opacity: 0.85;
 }
+.w-btn--update {
+  /* Vert Fluent (succes) : texte blanc en clair, fonce sur le vert clair du sombre. */
+  --w-update: #0f7b0f;
+  --w-update-hover: #138a13;
+  --w-update-text: #fff;
+  --w-update-glow: rgba(19, 161, 14, 0.5);
+  background: var(--w-update);
+  color: var(--w-update-text) !important;
+  border-color: rgba(255, 255, 255, 0.08);
+  border-bottom-color: rgba(0, 0, 0, 0.4);
+  animation: w-update-glow 2.2s ease-out infinite;
+}
+@media (prefers-color-scheme: dark) {
+  .w-btn--update {
+    --w-update: #6ccb5f;
+    --w-update-hover: #7fd673;
+    --w-update-text: #0b2a08;
+    --w-update-glow: rgba(108, 203, 95, 0.55);
+  }
+}
+.w-btn--update:hover:not(:disabled) {
+  background: var(--w-update-hover);
+}
+.w-btn--update:active:not(:disabled) {
+  background: var(--w-update);
+  opacity: 0.85;
+}
+.w-btn--update:disabled {
+  animation: none;
+}
+/* Loupiote : pastille de la couleur du texte. */
+.w-led {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+@keyframes w-update-glow {
+  0% {
+    box-shadow: 0 0 0 0 var(--w-update-glow);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 9px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .w-btn--update {
+    animation: none;
+  }
+}
 .w-btn--subtle {
   background: transparent;
   border-color: transparent;

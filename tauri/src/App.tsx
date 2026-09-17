@@ -294,6 +294,7 @@ function App() {
     revealDestination: () => {},
     repair: () => {},
     installUpdate: () => {},
+    visualTest: (_fill: boolean) => {},
   });
   macHandlers.current = {
     download: startDownloadWith,
@@ -301,6 +302,7 @@ function App() {
     revealDestination: () => env && openFolder(env.downloadDir),
     repair,
     installUpdate,
+    visualTest,
   };
   useEffect(() => {
     if (!isMac) return;
@@ -312,12 +314,7 @@ function App() {
       listen("mac://reveal-destination", () => macHandlers.current.revealDestination()),
       listen("mac://repair", () => macHandlers.current.repair()),
       listen("mac://install-update", () => macHandlers.current.installUpdate()),
-      listen<boolean>("mac://visual-test", (e) =>
-        setTasks((prev) => [
-          ...(e.payload ? makeVisualTestTasks() : []),
-          ...prev.filter((t) => t.id > 0),
-        ])
-      ),
+      listen<boolean>("mac://visual-test", (e) => macHandlers.current.visualTest(e.payload)),
     ];
     return () => subs.forEach((p) => p.then((f) => f()));
   }, []);
@@ -403,11 +400,7 @@ function App() {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "t")) return;
       e.preventDefault();
-      setTasks((prev) =>
-        prev.some((t) => t.id < 0)
-          ? prev.filter((t) => t.id > 0)
-          : [...makeVisualTestTasks(), ...prev]
-      );
+      macHandlers.current.visualTest(!visualTestOn.current);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -441,8 +434,19 @@ function App() {
   function clearList() {
     setTasks((prev) => prev.filter((t) => t.action === "cancel"));
   }
+  // Test visuel : file factice + bouton « Mise a jour » factice (url vide,
+  // un clic ne fait rien) si aucune vraie mise a jour n'est disponible.
+  const visualTestOn = useRef(false);
+  function visualTest(fill: boolean) {
+    visualTestOn.current = fill;
+    setTasks((prev) => [...(fill ? makeVisualTestTasks() : []), ...prev.filter((t) => t.id > 0)]);
+    setAvailableUpdate((prev) => {
+      if (fill) return prev ?? { version: "test", url: "" };
+      return prev?.url === "" ? null : prev;
+    });
+  }
   async function installUpdate() {
-    if (!availableUpdate) return;
+    if (!availableUpdate?.url) return;
     setUpdateInstalling(true);
     try {
       await invoke("install_update", { url: availableUpdate.url });
@@ -503,9 +507,7 @@ function App() {
       onClear={clearList}
       onChooseDestination={chooseDestination}
       hasVisualTest={tasks.some((t) => t.id < 0)}
-      onVisualTest={(fill) =>
-        setTasks((prev) => [...(fill ? makeVisualTestTasks() : []), ...prev.filter((t) => t.id > 0)])
-      }
+      onVisualTest={visualTest}
     />
   );
 }

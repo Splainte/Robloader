@@ -470,12 +470,12 @@ export default function WinLayout(props: Props) {
             <button
               type="button"
               id="w-update"
-              className="w-btn w-btn--tall"
+              className="w-btn w-btn--tall w-btn--update"
               disabled={props.updateInstalling}
               title={`Installer la version ${props.updateVersion} et relancer`}
               onClick={props.onInstallUpdate}
             >
-              {props.updateInstalling ? <span className="w-spinner" /> : <Ico d="update" />}
+              {props.updateInstalling ? <span className="w-spinner" /> : <span className="w-led" aria-hidden="true" />}
               {props.updateInstalling ? "Installation…" : "Mise à jour"}
             </button>
           )}
