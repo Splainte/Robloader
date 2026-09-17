@@ -16,16 +16,18 @@
 
 use std::cell::{Cell, OnceCell, RefCell};
 use std::ffi::c_void;
+use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
+use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, ProtocolObject, Sel};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
-    NSApplication, NSButton, NSColor, NSControlStateValueOff,
+    NSApplication, NSBezelStyle, NSButton, NSCellImagePosition, NSColor, NSControlStateValueOff,
     NSControlStateValueOn, NSControlTextEditingDelegate, NSEvent, NSEventType, NSFocusRingType,
-    NSFont, NSFontWeightBold, NSFontWeightSemibold, NSImage, NSImageView, NSLayoutAttribute,
+    NSFont, NSFontWeightBold, NSFontWeightRegular, NSImageSymbolConfiguration, NSImageSymbolScale, NSFontWeightSemibold, NSImage, NSImageView, NSLayoutAttribute,
     NSLayoutConstraint, NSLayoutConstraintOrientation, NSLineBreakMode, NSPasteboard,
     NSPasteboardTypeString, NSPopUpButton, NSScrollView, NSSplitViewController, NSSplitViewItem,
     NSSplitViewItemBehavior, NSStackView, NSStackViewDistribution, NSSwitch, NSTextField,
@@ -36,7 +38,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{
     ns_string, MainThreadMarker, NSArray, NSEdgeInsets, NSNotification, NSObject,
-    NSNumber, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
+    NSNumber, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString, NSTimer,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -221,7 +223,7 @@ impl Reveal {
 struct Ui {
     window: Retained<NSWindow>,
     url_capsule: Retained<UrlCapsule>,
-    update_pill: Retained<UpdatePill>,
+    update_button: Retained<NSButton>,
     url_field: Retained<NSTextField>,
     chip_item: Option<Retained<NSToolbarItem>>,
     update_item: Option<Retained<NSToolbarItem>>,
@@ -365,213 +367,79 @@ impl UrlCapsule {
     }
 }
 
-// ---------- Bouton « Mise a jour » : capsule verte + loupiote ----------
+// ---------- Loupiote du bouton « Mise a jour » ----------
 
-pub struct PillIvars {
-    enabled: Cell<bool>,
-    pressed: Cell<bool>,
-    label: OnceCell<Retained<NSTextField>>,
-    led: OnceCell<Retained<NSView>>,
+thread_local! {
+    static BLINK_TIMER: RefCell<Option<Retained<NSTimer>>> = const { RefCell::new(None) };
+    static BLINK_ON: Cell<bool> = const { Cell::new(true) };
 }
 
-const BREATHE_KEY: &str = "rl.breathe";
+// Teinte d'un item de barre d'outils : macOS 26+ seulement.
+fn update_tintable(item: &NSToolbarItem) -> bool {
+    responds(item, sel!(setBackgroundTintColor:))
+}
 
-define_class!(
-    #[unsafe(super(NSView))]
-    #[thread_kind = MainThreadOnly]
-    #[name = "RobloaderUpdatePill"]
-    #[ivars = PillIvars]
-    pub struct UpdatePill;
+// Point plein (symbole SF « circle.fill »), allume ou attenue.
+fn led_image(on: bool, white: bool) -> Option<Retained<NSImage>> {
+    let base = symbol("circle.fill", "Nouvelle version disponible")?;
+    let color = if white { NSColor::whiteColor() } else { NSColor::systemGreenColor() };
+    let color = if on { color } else { color.colorWithAlphaComponent(0.25) };
+    let size = NSImageSymbolConfiguration::configurationWithPointSize_weight_scale(
+        7.0,
+        unsafe { NSFontWeightRegular },
+        NSImageSymbolScale::Small,
+    );
+    let palette = NSImageSymbolConfiguration::configurationWithPaletteColors(
+        &NSArray::from_retained_slice(&[color]),
+    );
+    base.imageWithSymbolConfiguration(&size.configurationByApplyingConfiguration(&palette))
+}
 
-    impl UpdatePill {
-        #[unsafe(method(wantsUpdateLayer))]
-        fn wants_update_layer(&self) -> bool {
-            true
+fn set_led(on: bool) {
+    with_ui(|ui| {
+        let Some(item) = &ui.update_item else { return };
+        if update_tintable(item) {
+            item.setImage(led_image(on, true).as_deref());
+        } else if let Some(img) = led_image(on, false) {
+            ui.update_button.setImage(Some(&img));
         }
+    });
+}
 
-        #[unsafe(method(updateLayer))]
-        fn update_layer(&self) {
-            self.paint();
-        }
-
-        #[unsafe(method(viewDidChangeEffectiveAppearance))]
-        fn appearance_changed(&self) {
-            self.setNeedsDisplay(true);
-        }
-
-        // La barre d'outils peut recreer les couches (item masque puis
-        // affiche) : l'animation est reposee a chaque rattachement.
-        #[unsafe(method(viewDidMoveToWindow))]
-        fn did_move_to_window(&self) {
-            self.update_breathing();
-        }
-
-        #[unsafe(method(mouseDownCanMoveWindow))]
-        fn mouse_down_can_move_window(&self) -> bool {
-            false
-        }
-
-        #[unsafe(method(acceptsFirstMouse:))]
-        fn accepts_first_mouse(&self, _event: Option<&NSEvent>) -> bool {
-            true
-        }
-
-        // Le libelle et la loupiote ne captent pas le clic : tout va a la capsule.
-        #[unsafe(method(hitTest:))]
-        fn hit_test(&self, point: NSPoint) -> *mut NSView {
-            let superview = unsafe { self.superview() };
-            let local = self.convertPoint_fromView(point, superview.as_deref());
-            if self.contains(local) {
-                self as *const Self as *mut NSView
-            } else {
-                std::ptr::null_mut()
-            }
-        }
-
-        #[unsafe(method(mouseDown:))]
-        fn mouse_down(&self, _event: &NSEvent) {
-            if self.ivars().enabled.get() {
-                self.ivars().pressed.set(true);
-                self.setNeedsDisplay(true);
-            }
-        }
-
-        #[unsafe(method(mouseUp:))]
-        fn mouse_up(&self, event: &NSEvent) {
-            let was_pressed = self.ivars().pressed.replace(false);
-            self.setNeedsDisplay(true);
-            let local = self.convertPoint_fromView(event.locationInWindow(), None);
-            if was_pressed && self.ivars().enabled.get() && self.contains(local) {
-                let controller = CONTROLLER.with(|c| c.try_borrow().ok().and_then(|c| c.clone()));
-                if let Some(controller) = controller {
-                    let _: () = unsafe { msg_send![&*controller, onUpdate: None::<&AnyObject>] };
-                }
-            }
-        }
+fn reduce_motion() -> bool {
+    let Some(cls) = AnyClass::get(c"NSWorkspace") else { return false };
+    unsafe {
+        let ws: *mut AnyObject = msg_send![cls, sharedWorkspace];
+        msg_send![ws, accessibilityDisplayShouldReduceMotion]
     }
-);
+}
 
-impl UpdatePill {
-    fn new(mtm: MainThreadMarker) -> Retained<Self> {
-        let this = Self::alloc(mtm).set_ivars(PillIvars {
-            enabled: Cell::new(true),
-            pressed: Cell::new(false),
-            label: OnceCell::new(),
-            led: OnceCell::new(),
-        });
-        let this: Retained<Self> = unsafe {
-            msg_send![super(this), initWithFrame: NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(130.0, 32.0))]
-        };
-        this.setWantsLayer(true);
-
-        let led = NSView::new(mtm);
-        led.setWantsLayer(true);
-        unsafe {
-            let layer: *mut AnyObject = msg_send![&*led, layer];
-            if !layer.is_null() {
-                let white = NSColor::whiteColor();
-                let white_cg: *mut c_void = msg_send![&*white, CGColor];
-                let _: () = msg_send![layer, setBackgroundColor: white_cg];
-                let _: () = msg_send![layer, setCornerRadius: 4.0f64];
-            }
-        }
-        let text = label("Mise à jour", mtm);
-        text.setFont(Some(&NSFont::systemFontOfSize_weight(13.0, unsafe { NSFontWeightSemibold })));
-        text.setTextColor(Some(&NSColor::whiteColor()));
-
-        let stack = hstack(&[&led, &text], mtm);
-        stack.setSpacing(7.0);
-        stack.setTranslatesAutoresizingMaskIntoConstraints(false);
-        this.addSubview(&stack);
-        NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&[
-            led.widthAnchor().constraintEqualToConstant(8.0),
-            led.heightAnchor().constraintEqualToConstant(8.0),
-            this.heightAnchor().constraintEqualToConstant(32.0),
-            stack.centerYAnchor().constraintEqualToAnchor(&this.centerYAnchor()),
-            stack.leadingAnchor().constraintEqualToAnchor_constant(&this.leadingAnchor(), 13.0),
-            this.trailingAnchor().constraintEqualToAnchor_constant(&stack.trailingAnchor(), 15.0),
-        ]));
-        this.setToolTip(Some(ns_string!("Installer la mise à jour et relancer")));
-
-        let _ = this.ivars().label.set(text);
-        let _ = this.ivars().led.set(led);
-        this
+// Clignotement en alternant deux images (les icones d'une barre d'outils ne
+// s'animent pas). Fixe si « Reduire les animations » est actif.
+fn start_blink() {
+    if BLINK_TIMER.with(|t| t.borrow().is_some()) {
+        return;
     }
-
-    fn contains(&self, p: NSPoint) -> bool {
-        let b = self.bounds();
-        p.x >= 0.0 && p.y >= 0.0 && p.x <= b.size.width && p.y <= b.size.height
+    BLINK_ON.with(|b| b.set(true));
+    set_led(true);
+    if reduce_motion() {
+        return;
     }
+    let block = RcBlock::new(|_timer: NonNull<NSTimer>| {
+        let on = !BLINK_ON.with(|b| b.get());
+        BLINK_ON.with(|b| b.set(on));
+        set_led(on);
+    });
+    let timer = unsafe { NSTimer::scheduledTimerWithTimeInterval_repeats_block(0.8, true, &block) };
+    BLINK_TIMER.with(|t| *t.borrow_mut() = Some(timer));
+}
 
-    /// Cliquable + loupiote animee, ou « Installation… » grise et immobile.
-    fn set_state(&self, enabled: bool) {
-        self.ivars().enabled.set(enabled);
-        if let Some(text) = self.ivars().label.get() {
-            let title = if enabled { "Mise à jour" } else { "Installation…" };
-            text.setStringValue(&NSString::from_str(title));
-        }
-        self.setAlphaValue(if enabled { 1.0 } else { 0.6 });
-        self.update_breathing();
-        self.setNeedsDisplay(true);
+fn stop_blink() {
+    if let Some(timer) = BLINK_TIMER.with(|t| t.borrow_mut().take()) {
+        timer.invalidate();
     }
-
-    fn paint(&self) {
-        let pressed = self.ivars().pressed.get();
-        let green = NSColor::systemGreenColor();
-        let fill = if pressed { green.colorWithAlphaComponent(0.8) } else { green };
-        let height = self.bounds().size.height;
-        unsafe {
-            let layer: *mut AnyObject = msg_send![self, layer];
-            if layer.is_null() {
-                return;
-            }
-            let fill_cg: *mut c_void = msg_send![&*fill, CGColor];
-            let _: () = msg_send![layer, setBackgroundColor: fill_cg];
-            let _: () = msg_send![layer, setCornerRadius: height / 2.0];
-        }
-    }
-
-    // Loupiote qui « respire » (Core Animation, tourne hors du thread
-    // principal). Coupee si « Reduire les animations » est actif.
-    fn update_breathing(&self) {
-        let Some(led) = self.ivars().led.get() else { return };
-        unsafe {
-            let layer: *mut AnyObject = msg_send![&**led, layer];
-            if layer.is_null() {
-                return;
-            }
-            let key = NSString::from_str(BREATHE_KEY);
-            let _: () = msg_send![layer, removeAnimationForKey: &*key];
-            let reduce_motion = AnyClass::get(c"NSWorkspace")
-                .map(|cls| {
-                    let ws: *mut AnyObject = msg_send![cls, sharedWorkspace];
-                    let reduce: bool = msg_send![ws, accessibilityDisplayShouldReduceMotion];
-                    reduce
-                })
-                .unwrap_or(false);
-            if !self.ivars().enabled.get() || reduce_motion || self.window().is_none() {
-                return;
-            }
-            let (Some(anim_cls), Some(timing_cls)) =
-                (AnyClass::get(c"CABasicAnimation"), AnyClass::get(c"CAMediaTimingFunction"))
-            else {
-                return;
-            };
-            let anim: *mut AnyObject = msg_send![anim_cls, animationWithKeyPath: ns_string!("opacity")];
-            let from = NSNumber::new_f64(1.0);
-            let to = NSNumber::new_f64(0.3);
-            let _: () = msg_send![anim, setFromValue: &*from];
-            let _: () = msg_send![anim, setToValue: &*to];
-            let _: () = msg_send![anim, setDuration: 1.0f64];
-            let _: () = msg_send![anim, setAutoreverses: true];
-            let _: () = msg_send![anim, setRepeatCount: f32::INFINITY];
-            let _: () = msg_send![anim, setRemovedOnCompletion: false];
-            let timing: *mut AnyObject =
-                msg_send![timing_cls, functionWithName: ns_string!("easeInEaseOut")];
-            let _: () = msg_send![anim, setTimingFunction: timing];
-            let _: () = msg_send![layer, addAnimation: anim, forKey: &*key];
-        }
-    }
+    BLINK_ON.with(|b| b.set(true));
+    set_led(true);
 }
 
 // ---------- Controleur Obj-C (delegue + cible des actions) ----------
@@ -809,11 +677,27 @@ impl Controller {
                 }
             }
             ID_UPDATE => {
-                // Capsule verte maison (loupiote qui respire) : un item standard
-                // ne peut ni etre teinte en vert ni anime.
-                let pill = with_ui(|ui| ui.update_pill.clone())?;
+                // Vert et loupiote avec les elements d'Apple uniquement.
+                // macOS 26+ : item proeminent teinte en vert, loupiote blanche.
+                // Avant : l'item ne se teinte pas -> vrai bouton de barre
+                // d'outils, loupiote verte.
                 item.setLabel(ns_string!("Mise à jour"));
-                item.setView(Some(&pill));
+                if update_tintable(&item) {
+                    item.setTitle(ns_string!("Mise à jour"));
+                    item.setImage(led_image(true, true).as_deref());
+                    item.setBordered(true);
+                    unsafe {
+                        item.setTarget(Some(self.as_target()));
+                        item.setAction(Some(sel!(onUpdate:)));
+                    }
+                    if responds(&item, sel!(setStyle:)) {
+                        item.setStyle(NSToolbarItemStyle::Prominent);
+                    }
+                    item.setBackgroundTintColor(Some(&NSColor::systemGreenColor()));
+                } else {
+                    let button = with_ui(|ui| ui.update_button.clone())?;
+                    item.setView(Some(&button));
+                }
                 set_item_hidden(&item, true);
             }
             ID_DOWNLOAD => {
@@ -1408,7 +1292,18 @@ fn build_ui(
         url_field.setAction(Some(sel!(onSubmit:)));
     }
     let url_capsule = UrlCapsule::new(&url_field, mtm);
-    let update_pill = UpdatePill::new(mtm);
+    // Mise a jour avant macOS 26 : vrai bouton de barre d'outils (vue de l'item).
+    let update_button = unsafe {
+        NSButton::buttonWithTitle_image_target_action(
+            ns_string!("Mise à jour"),
+            &led_image(true, false).unwrap_or_else(NSImage::new),
+            Some(controller.as_target()),
+            Some(sel!(onUpdate:)),
+            mtm,
+        )
+    };
+    update_button.setBezelStyle(NSBezelStyle::Toolbar);
+    update_button.setImagePosition(NSCellImagePosition::ImageLeading);
     let icon = match symbol("link", "Lien") {
         Some(img) => NSImageView::imageViewWithImage(&img, mtm),
         None => NSImageView::new(mtm),
@@ -1436,7 +1331,7 @@ fn build_ui(
     let ui = Ui {
         window,
         url_capsule,
-        update_pill,
+        update_button,
         url_field,
         chip_item: None,
         update_item: None,
@@ -1569,14 +1464,25 @@ pub fn set_env(
 pub fn set_update(app: AppHandle, version: Option<String>, installing: bool) {
     on_main(&app, move || {
         with_ui(|ui| {
-            ui.update_pill.set_state(!installing);
-            if let Some(v) = &version {
-                ui.update_pill.setToolTip(Some(&NSString::from_str(&format!(
-                    "Installer la version {v} et relancer"
-                ))));
+            let Some(item) = &ui.update_item else { return };
+            let title = NSString::from_str(if installing { "Installation…" } else { "Mise à jour" });
+            let tip = version
+                .as_ref()
+                .map(|v| NSString::from_str(&format!("Installer la version {v} et relancer")));
+            if update_tintable(item) {
+                item.setEnabled(!installing);
+                item.setTitle(&title);
+                item.setToolTip(tip.as_deref());
+            } else {
+                ui.update_button.setEnabled(!installing);
+                ui.update_button.setTitle(&title);
+                ui.update_button.setToolTip(tip.as_deref());
             }
-            if let Some(item) = &ui.update_item {
-                set_item_hidden(item, version.is_none());
+            set_item_hidden(item, version.is_none());
+            if version.is_some() && !installing {
+                start_blink();
+            } else {
+                stop_blink();
             }
         });
     });
