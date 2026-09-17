@@ -96,8 +96,43 @@ async fn mac_toolbar_height(app: tauri::AppHandle) -> f64 {
     }
 }
 
+// Une panique dans un callback AppKit fait avorter l'app et le rapport de crash
+// macOS ne contient pas son message : on l'ecrit dans
+// ~/Library/Logs/Robloader/panic.log (macOS) pour pouvoir diagnostiquer.
+fn log_panics() {
+    #[cfg(target_os = "macos")]
+    {
+        let default_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            if let Ok(home) = std::env::var("HOME") {
+                let dir = std::path::Path::new(&home).join("Library/Logs/Robloader");
+                let _ = std::fs::create_dir_all(&dir);
+                if let Ok(mut f) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(dir.join("panic.log"))
+                {
+                    use std::io::Write;
+                    let secs = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    let _ = writeln!(
+                        f,
+                        "[{secs}] v{} {info}\n{}\n",
+                        env!("CARGO_PKG_VERSION"),
+                        std::backtrace::Backtrace::force_capture()
+                    );
+                }
+            }
+            default_hook(info);
+        }));
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    log_panics();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())

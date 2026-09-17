@@ -155,6 +155,7 @@ struct DownloadRequest {
 // Les marges sont DANS le conteneur, pour qu'une zone fermee ne laisse aucun
 // espace dans la pile.
 
+#[derive(Clone)]
 struct Reveal {
     container: Retained<NSView>,
     content: Retained<NSView>,
@@ -216,6 +217,7 @@ impl Reveal {
 
 // ---------- Vues gardees pour les mises a jour (thread principal) ----------
 
+#[derive(Clone)]
 struct Ui {
     window: Retained<NSWindow>,
     url_capsule: Retained<UrlCapsule>,
@@ -238,16 +240,37 @@ struct Ui {
     dest_label: Retained<NSTextField>,
     foot_label: Retained<NSTextField>,
     repair_button: Retained<NSButton>,
-    profile_id: &'static str,
 }
 
 thread_local! {
     static UI: RefCell<Option<Ui>> = const { RefCell::new(None) };
     static CONTROLLER: RefCell<Option<Retained<Controller>>> = const { RefCell::new(None) };
+    static PROFILE_ID: Cell<&'static str> = const { Cell::new("default") };
 }
 
-fn with_ui<T>(f: impl FnOnce(&mut Ui) -> T) -> Option<T> {
-    UI.with(|cell| cell.borrow_mut().as_mut().map(f))
+// Les appels AppKit (vider un champ en edition, donner le focus, masquer un
+// item…) peuvent rappeler un delegue de facon synchrone, qui relit UI. On
+// travaille donc sur une copie des references (simples retain) : aucun emprunt
+// n'est tenu pendant ces appels. Une panique dans un callback Obj-C remonte
+// jusqu'au sendEvent: de tao, qui ne peut pas la propager et avorte l'app.
+fn with_ui<T>(f: impl FnOnce(&Ui) -> T) -> Option<T> {
+    let ui = UI.with(|cell| cell.try_borrow().ok()?.clone())?;
+    Some(f(&ui))
+}
+
+// Modification de l'etat garde : jamais d'appel AppKit dans `f`.
+fn update_ui(f: impl FnOnce(&mut Ui)) {
+    UI.with(|cell| {
+        if let Ok(mut guard) = cell.try_borrow_mut() {
+            if let Some(ui) = guard.as_mut() {
+                f(ui);
+            }
+        }
+    });
+}
+
+fn focus_url_field() {
+    with_ui(|ui| ui.window.makeFirstResponder(Some(&ui.url_field)));
 }
 
 // ---------- Capsule du champ de lien (facon barre d'adresse Safari) ----------
@@ -430,10 +453,8 @@ define_class!(
             if text.is_empty() {
                 return;
             }
-            with_ui(|ui| {
-                ui.url_field.setStringValue(&NSString::from_str(&text));
-                ui.window.makeFirstResponder(Some(&ui.url_field));
-            });
+            with_ui(|ui| ui.url_field.setStringValue(&NSString::from_str(&text)));
+            focus_url_field();
             apply_profile(detect_profile(&text));
         }
 
@@ -557,7 +578,7 @@ impl Controller {
                 item.setBordered(false);
             }
             ID_URL => {
-                let capsule = UI.with(|c| c.borrow().as_ref().map(|ui| ui.url_capsule.clone()))?;
+                let capsule = with_ui(|ui| ui.url_capsule.clone())?;
                 item.setLabel(ns_string!("Lien"));
                 item.setView(Some(&capsule));
             }
@@ -603,14 +624,10 @@ impl Controller {
             }
             _ => return None,
         }
-        UI.with(|c| {
-            if let Some(ui) = c.borrow_mut().as_mut() {
-                match id.as_str() {
-                    ID_CHIP => ui.chip_item = Some(item.clone()),
-                    ID_UPDATE => ui.update_item = Some(item.clone()),
-                    _ => {}
-                }
-            }
+        update_ui(|ui| match id.as_str() {
+            ID_CHIP => ui.chip_item = Some(item.clone()),
+            ID_UPDATE => ui.update_item = Some(item.clone()),
+            _ => {}
         });
         Some(item)
     }
@@ -669,16 +686,14 @@ impl Controller {
             "mac://download",
             DownloadRequest { url: url.clone(), settings },
         );
-        with_ui(|ui| {
-            if url.is_empty() {
-                ui.window.makeFirstResponder(Some(&ui.url_field));
-                return;
-            }
-            ui.url_field.setStringValue(ns_string!(""));
-            ui.start_field.setStringValue(ns_string!(""));
-            ui.end_field.setStringValue(ns_string!(""));
-        });
-        if !url.is_empty() {
+        if url.is_empty() {
+            focus_url_field();
+        } else {
+            with_ui(|ui| {
+                ui.url_field.setStringValue(ns_string!(""));
+                ui.start_field.setStringValue(ns_string!(""));
+                ui.end_field.setStringValue(ns_string!(""));
+            });
             with_settings(|s| {
                 s.start.clear();
                 s.end.clear();
@@ -761,11 +776,10 @@ fn fill_outputs(popup: &NSPopUpButton, transcode: bool, selected: &str) {
 
 // Adapte le champ, la pastille et les sections au site detecte.
 fn apply_profile(profile: &'static Profile) {
+    if PROFILE_ID.with(|p| p.replace(profile.id)) == profile.id {
+        return;
+    }
     with_ui(|ui| {
-        if ui.profile_id == profile.id {
-            return;
-        }
-        ui.profile_id = profile.id;
         ui.url_field
             .setPlaceholderString(Some(&NSString::from_str(profile.placeholder)));
         if let Some(chip) = &ui.chip_item {
@@ -1232,7 +1246,6 @@ fn build_ui(
         dest_label,
         foot_label,
         repair_button,
-        profile_id: DEFAULT_PROFILE.id,
     };
     (Retained::into_super(Retained::into_super(scroll)), ui)
 }
