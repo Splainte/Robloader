@@ -246,8 +246,20 @@ thread_local! {
     static CONTROLLER: RefCell<Option<Retained<Controller>>> = const { RefCell::new(None) };
 }
 
+// Pas d'appel AppKit susceptible de rappeler un delegue (makeFirstResponder…)
+// dans `f` : le rappel retomberait ici pendant l'emprunt. Une panique dans un
+// callback Obj-C ne peut pas remonter et avorte l'app : on ignore alors l'appel
+// imbrique au lieu de paniquer.
 fn with_ui<T>(f: impl FnOnce(&mut Ui) -> T) -> Option<T> {
-    UI.with(|cell| cell.borrow_mut().as_mut().map(f))
+    UI.with(|cell| cell.try_borrow_mut().ok()?.as_mut().map(f))
+}
+
+// Donne le focus au champ de lien hors de tout emprunt de UI : si le champ est
+// deja en edition, AppKit envoie controlTextDidEndEditing de facon synchrone.
+fn focus_url_field() {
+    if let Some((window, field)) = with_ui(|ui| (ui.window.clone(), ui.url_field.clone())) {
+        window.makeFirstResponder(Some(&field));
+    }
 }
 
 // ---------- Capsule du champ de lien (facon barre d'adresse Safari) ----------
@@ -430,10 +442,8 @@ define_class!(
             if text.is_empty() {
                 return;
             }
-            with_ui(|ui| {
-                ui.url_field.setStringValue(&NSString::from_str(&text));
-                ui.window.makeFirstResponder(Some(&ui.url_field));
-            });
+            with_ui(|ui| ui.url_field.setStringValue(&NSString::from_str(&text)));
+            focus_url_field();
             apply_profile(detect_profile(&text));
         }
 
@@ -669,16 +679,14 @@ impl Controller {
             "mac://download",
             DownloadRequest { url: url.clone(), settings },
         );
-        with_ui(|ui| {
-            if url.is_empty() {
-                ui.window.makeFirstResponder(Some(&ui.url_field));
-                return;
-            }
-            ui.url_field.setStringValue(ns_string!(""));
-            ui.start_field.setStringValue(ns_string!(""));
-            ui.end_field.setStringValue(ns_string!(""));
-        });
-        if !url.is_empty() {
+        if url.is_empty() {
+            focus_url_field();
+        } else {
+            with_ui(|ui| {
+                ui.url_field.setStringValue(ns_string!(""));
+                ui.start_field.setStringValue(ns_string!(""));
+                ui.end_field.setStringValue(ns_string!(""));
+            });
             with_settings(|s| {
                 s.start.clear();
                 s.end.clear();
