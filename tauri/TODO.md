@@ -1,5 +1,33 @@
 # TODO
 
+## Passer au module de mise à jour officiel de Tauri (2026-10-15)
+
+Aujourd'hui la MàJ est maison (`check_update` / `install_update` dans
+`engine.rs`) : lecture de l'API GitHub Releases puis téléchargement de
+l'installeur par curl, **sans vérification de signature**. Si le compte GitHub
+ou une release était compromis, l'app installerait n'importe quel binaire.
+
+Copiteur est passé au plugin officiel `tauri-plugin-updater` (v1.0.0, PR #5
+de Splainte/Copiteur) — modèle à reprendre tel quel :
+
+- Paire de clés `npx tauri signer generate` ; clé publique dans
+  `tauri.conf.json` (`plugins.updater.pubkey`), clé privée + mot de passe en
+  secrets du dépôt (`TAURI_SIGNING_PRIVATE_KEY[_PASSWORD]`). **La clé privée
+  ne doit jamais être perdue** (sinon plus de MàJ possible).
+- `bundle.createUpdaterArtifacts: true` ; endpoint
+  `https://github.com/Splainte/Robloader/releases/latest/download/latest.json` ;
+  Windows `installMode: "passive"`.
+- Workflow `release.yml` de Copiteur : release brouillon (notes = message du
+  tag annoté), builds signés, puis UN job final qui écrit `latest.json`
+  (évite que les builds Windows/macOS l'écrasent en parallèle).
+- Front : `check()` / `update.download()` / `update.install()` / `relaunch()`
+  (`Updater.tsx` de Copiteur), installation bloquée pendant un téléchargement.
+- Transition : les versions actuelles ne connaissent que l'ancien système. La
+  première version « plugin » doit donc encore être installée par l'ancien
+  mécanisme (garder l'asset que lit `check_update`) ; les suivantes passeront
+  par le plugin.
+- Rend caduc le point ci-dessous (le plugin gère progression + relance).
+
 ## MàJ silencieuse : rendre le passage plus visuel (2026-07-10)
 
 Actuellement (v2.1.1+) : clic sur « Installer et relancer » → texte statique
