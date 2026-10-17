@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Fusionne par Tauri dans l'Info.plist de l'app. Langues de l'app :
+	     macOS choisit d'apres elles (et la preference AppleLanguages que
+	     l'app ecrit, cf. i18n.rs) celle de ses propres elements (boite
+	     « Choisir un dossier »…). -->
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>fr</string>
+	</array>
+</dict>
+</plist>

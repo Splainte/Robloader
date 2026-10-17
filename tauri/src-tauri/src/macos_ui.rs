@@ -25,16 +25,17 @@ use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, ProtocolObject, Sel};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{
-    NSApplication, NSBezelStyle, NSButton, NSCellImagePosition, NSColor, NSControlStateValueOff,
+    NSAlert, NSApplication, NSBackingStoreType, NSBezelStyle, NSBox, NSBoxType, NSButton, NSCellImagePosition, NSColor, NSControlStateValueOff,
     NSControlStateValueOn, NSControlTextEditingDelegate, NSEvent, NSEventType, NSFocusRingType,
     NSFont, NSFontWeightBold, NSFontWeightRegular, NSImageSymbolConfiguration, NSImageSymbolScale, NSFontWeightSemibold, NSImage, NSImageView, NSLayoutAttribute,
     NSLayoutConstraint, NSLayoutConstraintOrientation, NSLineBreakMode, NSPasteboard,
-    NSPasteboardTypeString, NSPopUpButton, NSScrollView, NSSplitViewController, NSSplitViewItem,
+    NSPasteboardTypeString, NSPopUpButton, NSScrollView, NSSegmentSwitchTracking, NSSegmentedControl,
+    NSSplitViewController, NSSplitViewItem,
     NSSplitViewItemBehavior, NSStackView, NSStackViewDistribution, NSSwitch, NSTextField,
     NSTextFieldDelegate, NSToolbar, NSToolbarDelegate, NSToolbarDisplayMode,
     NSToolbarFlexibleSpaceItemIdentifier, NSToolbarItem, NSToolbarSpaceItemIdentifier, NSToolbarItemStyle,
     NSToolbarSidebarTrackingSeparatorItemIdentifier, NSUserInterfaceLayoutOrientation, NSView,
-    NSViewController, NSWindow, NSWindowTitleVisibility, NSWindowToolbarStyle,
+    NSViewController, NSWindow, NSWindowStyleMask, NSWindowTitleVisibility, NSWindowToolbarStyle,
 };
 use objc2_foundation::{
     ns_string, MainThreadMarker, NSArray, NSEdgeInsets, NSNotification, NSObject,
@@ -42,6 +43,8 @@ use objc2_foundation::{
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
+
+use crate::i18n::{self, tr};
 
 // ---------- Donnees (miroir de App.tsx) ----------
 
@@ -59,8 +62,10 @@ const OUTPUTS_NATIVE: [&str; 3] = ["Vidéo (natif)", "Audio WAV", "Sous-titres s
 struct Profile {
     id: &'static str,
     label: &'static str,
+    label_en: &'static str,
     domains: &'static [&'static str],
     placeholder: &'static str,
+    placeholder_en: &'static str,
     ladder: bool,
     subtitles: bool,
     thumbnail: bool,
@@ -69,19 +74,41 @@ struct Profile {
 const DEFAULT_PROFILE: Profile = Profile {
     id: "default",
     label: "Vidéo",
+    label_en: "Video",
     domains: &[],
     placeholder: "Colle un lien (YouTube, TikTok, Instagram, X, Weibo)…",
+    placeholder_en: "Paste a link (YouTube, TikTok, Instagram, X, Weibo)…",
     ladder: true,
     subtitles: true,
     thumbnail: true,
 };
 const SITE_PROFILES: [Profile; 5] = [
-    Profile { id: "youtube", label: "YouTube", domains: &["youtube.com", "youtu.be"], placeholder: "Colle un lien YouTube ici…", ladder: true, subtitles: true, thumbnail: true },
-    Profile { id: "tiktok", label: "TikTok", domains: &["tiktok.com"], placeholder: "Colle un lien TikTok ici…", ladder: false, subtitles: false, thumbnail: true },
-    Profile { id: "instagram", label: "Instagram", domains: &["instagram.com", "instagr.am"], placeholder: "Colle un lien Instagram ici…", ladder: false, subtitles: false, thumbnail: false },
-    Profile { id: "x", label: "X", domains: &["twitter.com", "x.com"], placeholder: "Colle un lien X (Twitter) ici…", ladder: false, subtitles: false, thumbnail: false },
-    Profile { id: "weibo", label: "Weibo", domains: &["weibo.com", "weibo.cn"], placeholder: "Colle un lien Weibo ici…", ladder: false, subtitles: false, thumbnail: false },
+    Profile { id: "youtube", label: "YouTube", label_en: "YouTube", domains: &["youtube.com", "youtu.be"], placeholder: "Colle un lien YouTube ici…", placeholder_en: "Paste a YouTube link here…", ladder: true, subtitles: true, thumbnail: true },
+    Profile { id: "tiktok", label: "TikTok", label_en: "TikTok", domains: &["tiktok.com"], placeholder: "Colle un lien TikTok ici…", placeholder_en: "Paste a TikTok link here…", ladder: false, subtitles: false, thumbnail: true },
+    Profile { id: "instagram", label: "Instagram", label_en: "Instagram", domains: &["instagram.com", "instagr.am"], placeholder: "Colle un lien Instagram ici…", placeholder_en: "Paste an Instagram link here…", ladder: false, subtitles: false, thumbnail: false },
+    Profile { id: "x", label: "X", label_en: "X", domains: &["twitter.com", "x.com"], placeholder: "Colle un lien X (Twitter) ici…", placeholder_en: "Paste an X (Twitter) link here…", ladder: false, subtitles: false, thumbnail: false },
+    Profile { id: "weibo", label: "Weibo", label_en: "Weibo", domains: &["weibo.com", "weibo.cn"], placeholder: "Colle un lien Weibo ici…", placeholder_en: "Paste a Weibo link here…", ladder: false, subtitles: false, thumbnail: false },
 ];
+
+// Les libelles de qualite et de format servent aussi de valeurs envoyees au
+// moteur (en francais) : on ne traduit que l'affichage.
+fn quality_display(i: usize) -> &'static str {
+    if i == 0 {
+        tr(QUALITY_LABELS[0], "Max quality (up to 4K)")
+    } else {
+        QUALITY_LABELS[i]
+    }
+}
+
+fn output_display(key: &str) -> &'static str {
+    match key {
+        "Vidéo (natif)" => tr("Vidéo (natif)", "Video (native)"),
+        "Sous-titres seuls (.srt)" => tr("Sous-titres seuls (.srt)", "Subtitles only (.srt)"),
+        "HEVC" => "HEVC",
+        "ProRes" => "ProRes",
+        _ => "Audio WAV",
+    }
+}
 
 fn detect_profile(url: &str) -> &'static Profile {
     let u = url.trim();
@@ -276,6 +303,79 @@ fn focus_url_field() {
     with_ui(|ui| ui.window.makeFirstResponder(Some(&ui.url_field)));
 }
 
+// ---------- Changement de langue a chaud ----------
+//
+// Chaque texte traduisible s'inscrit ici a sa creation ; `relabel` les
+// reecrit tous dans la nouvelle langue (appele par i18n::apply). Les textes
+// calcules (pied du volet, Mise a jour, formats…) sont recalcules a part.
+
+thread_local! {
+    static RELABEL: RefCell<Vec<Box<dyn Fn()>>> = const { RefCell::new(Vec::new()) };
+    static LAST_ENV: RefCell<Option<(String, bool, String, bool)>> = const { RefCell::new(None) };
+    static LAST_UPDATE: RefCell<(Option<String>, bool)> = const { RefCell::new((None, false)) };
+}
+
+fn on_relabel(f: impl Fn() + 'static) {
+    RELABEL.with(|r| r.borrow_mut().push(Box::new(f)));
+}
+
+pub fn relabel() {
+    // Aucun emprunt tenu pendant les appels AppKit (cf. with_ui).
+    let list = RELABEL.with(|r| std::mem::take(&mut *r.borrow_mut()));
+    for f in &list {
+        f();
+    }
+    RELABEL.with(|r| {
+        let mut g = r.borrow_mut();
+        let added = std::mem::take(&mut *g);
+        *g = list;
+        g.extend(added);
+    });
+    with_ui(|ui| {
+        for (i, b) in ui.quality_buttons.iter().enumerate() {
+            b.setToolTip(Some(&NSString::from_str(quality_display(i))));
+        }
+        let (transcode, output) = with_settings(|s| (s.transcode, s.output.clone()));
+        fill_outputs(&ui.output_popup, transcode, &output);
+    });
+    let id = PROFILE_ID.with(|p| p.replace(""));
+    apply_profile(profile_by_id(id));
+    if let Some((dir, ok, source, js)) = LAST_ENV.with(|e| e.borrow().clone()) {
+        show_env(&dir, ok, &source, js);
+    }
+    let (version, installing) = LAST_UPDATE.with(|u| u.borrow().clone());
+    show_update(version, installing);
+}
+
+// Libelle traduisible.
+fn tlabel(fr: &'static str, en: &'static str, mtm: MainThreadMarker) -> Retained<NSTextField> {
+    let l = label(tr(fr, en), mtm);
+    let c = l.clone();
+    on_relabel(move || c.setStringValue(&NSString::from_str(tr(fr, en))));
+    l
+}
+
+// Bouton traduisible.
+fn tbutton(
+    fr: &'static str,
+    en: &'static str,
+    controller: &Controller,
+    action: Sel,
+    mtm: MainThreadMarker,
+) -> Retained<NSButton> {
+    let b = unsafe {
+        NSButton::buttonWithTitle_target_action(
+            &NSString::from_str(tr(fr, en)),
+            Some(controller.as_target()),
+            Some(action),
+            mtm,
+        )
+    };
+    let c = b.clone();
+    on_relabel(move || c.setTitle(&NSString::from_str(tr(fr, en))));
+    b
+}
+
 // ---------- Capsule du champ de lien (facon barre d'adresse Safari) ----------
 
 pub struct CapsuleIvars {
@@ -381,7 +481,7 @@ fn update_tintable(item: &NSToolbarItem) -> bool {
 
 // Point plein (symbole SF « circle.fill »), allume ou attenue.
 fn led_image(on: bool, white: bool) -> Option<Retained<NSImage>> {
-    let base = symbol("circle.fill", "Nouvelle version disponible")?;
+    let base = symbol("circle.fill", tr("Nouvelle version disponible", "New version available"))?;
     let color = if white { NSColor::whiteColor() } else { NSColor::systemGreenColor() };
     let color = if on { color } else { color.colorWithAlphaComponent(0.25) };
     let size = NSImageSymbolConfiguration::configurationWithPointSize_weight_scale(
@@ -597,9 +697,14 @@ define_class!(
             let Some(popup) = sender.and_then(|s| s.downcast_ref::<NSPopUpButton>()) else {
                 return;
             };
-            if let Some(title) = popup.titleOfSelectedItem() {
-                with_settings(|s| s.output = title.to_string());
-            }
+            // Les titres sont traduits : la valeur vient de la position.
+            let Ok(idx) = usize::try_from(popup.indexOfSelectedItem()) else { return };
+            with_settings(|s| {
+                let list: &[&str] = if s.transcode { &OUTPUTS_TRANSCODE } else { &OUTPUTS_NATIVE };
+                if let Some(key) = list.get(idx) {
+                    s.output = (*key).into();
+                }
+            });
         }
 
         #[unsafe(method(onChooseDestination:))]
@@ -620,6 +725,26 @@ define_class!(
         #[unsafe(method(onUpdate:))]
         fn on_update(&self, _sender: Option<&AnyObject>) {
             let _ = self.ivars().app.emit("mac://install-update", ());
+        }
+
+        #[unsafe(method(onSettings:))]
+        fn on_settings(&self, _sender: Option<&AnyObject>) {
+            show_settings_window();
+        }
+
+        // Choix Francais / English (Reglages et 1er lancement).
+        #[unsafe(method(onLanguage:))]
+        fn on_language(&self, sender: Option<&AnyObject>) {
+            let Some(seg) = sender.and_then(|s| s.downcast_ref::<NSSegmentedControl>()) else {
+                return;
+            };
+            let lang = if seg.selectedSegment() == 1 { "en" } else { "fr" };
+            i18n::apply(&self.ivars().app, lang);
+        }
+
+        #[unsafe(method(onOpenSource:))]
+        fn on_open_source(&self, _sender: Option<&AnyObject>) {
+            let _ = std::process::Command::new("open").arg(SOURCE_URL).spawn();
         }
     }
 );
@@ -657,19 +782,15 @@ impl Controller {
             }
             ID_URL => {
                 let capsule = with_ui(|ui| ui.url_capsule.clone())?;
-                item.setLabel(ns_string!("Lien"));
                 item.setView(Some(&capsule));
             }
             ID_CHIP => {
-                item.setLabel(ns_string!("Source"));
                 item.setTitle(ns_string!(""));
                 item.setBordered(false);
                 set_item_hidden(&item, true);
             }
             ID_PASTE => {
-                item.setLabel(ns_string!("Coller"));
-                item.setToolTip(Some(ns_string!("Coller le lien")));
-                item.setImage(symbol("doc.on.clipboard", "Coller").as_deref());
+                item.setImage(symbol("doc.on.clipboard", tr("Coller", "Paste")).as_deref());
                 item.setBordered(true);
                 unsafe {
                     item.setTarget(Some(self.as_target()));
@@ -681,9 +802,8 @@ impl Controller {
                 // macOS 26+ : item proeminent teinte en vert, loupiote blanche.
                 // Avant : l'item ne se teinte pas -> vrai bouton de barre
                 // d'outils, loupiote verte.
-                item.setLabel(ns_string!("Mise à jour"));
                 if update_tintable(&item) {
-                    item.setTitle(ns_string!("Mise à jour"));
+                    item.setTitle(&NSString::from_str(tr("Mise à jour", "Update")));
                     item.setImage(led_image(true, true).as_deref());
                     item.setBordered(true);
                     unsafe {
@@ -701,9 +821,7 @@ impl Controller {
                 set_item_hidden(&item, true);
             }
             ID_DOWNLOAD => {
-                item.setLabel(ns_string!("Télécharger"));
-                item.setTitle(ns_string!("Télécharger"));
-                item.setImage(symbol("arrow.down", "Télécharger").as_deref());
+                item.setImage(symbol("arrow.down", tr("Télécharger", "Download")).as_deref());
                 item.setBordered(true);
                 unsafe {
                     item.setTarget(Some(self.as_target()));
@@ -715,6 +833,11 @@ impl Controller {
                 }
             }
             _ => return None,
+        }
+        label_item(&item, &id);
+        {
+            let (item, id) = (item.clone(), id.clone());
+            on_relabel(move || label_item(&item, &id));
         }
         update_ui(|ui| match id.as_str() {
             ID_CHIP => ui.chip_item = Some(item.clone()),
@@ -795,6 +918,26 @@ impl Controller {
     }
 }
 
+// Textes fixes des items de barre d'outils (le titre de « Mise a jour » suit
+// son etat, cf. show_update).
+fn label_item(item: &NSToolbarItem, id: &str) {
+    let set_label = |fr, en| item.setLabel(&NSString::from_str(tr(fr, en)));
+    match id {
+        ID_URL => set_label("Lien", "Link"),
+        ID_CHIP => set_label("Source", "Source"),
+        ID_PASTE => {
+            set_label("Coller", "Paste");
+            item.setToolTip(Some(&NSString::from_str(tr("Coller le lien", "Paste the link"))));
+        }
+        ID_UPDATE => set_label("Mise à jour", "Update"),
+        ID_DOWNLOAD => {
+            set_label("Télécharger", "Download");
+            item.setTitle(&NSString::from_str(tr("Télécharger", "Download")));
+        }
+        _ => {}
+    }
+}
+
 fn toolbar_identifiers() -> Retained<NSArray<NSString>> {
     let flexible: &NSString = unsafe { NSToolbarFlexibleSpaceItemIdentifier };
     let space: &NSString = unsafe { NSToolbarSpaceItemIdentifier };
@@ -861,9 +1004,15 @@ fn select_quality(buttons: &[Retained<NSButton>], idx: usize) {
 fn fill_outputs(popup: &NSPopUpButton, transcode: bool, selected: &str) {
     let list: &[&str] = if transcode { &OUTPUTS_TRANSCODE } else { &OUTPUTS_NATIVE };
     popup.removeAllItems();
-    let titles: Vec<Retained<NSString>> = list.iter().map(|t| NSString::from_str(t)).collect();
+    let titles: Vec<Retained<NSString>> =
+        list.iter().map(|t| NSString::from_str(output_display(t))).collect();
     popup.addItemsWithTitles(&NSArray::from_retained_slice(&titles));
-    popup.selectItemWithTitle(&NSString::from_str(selected));
+    let idx = list.iter().position(|t| *t == selected).unwrap_or(0);
+    popup.selectItemAtIndex(idx as isize);
+}
+
+fn profile_by_id(id: &str) -> &'static Profile {
+    SITE_PROFILES.iter().find(|p| p.id == id).unwrap_or(&DEFAULT_PROFILE)
 }
 
 // Adapte le champ, la pastille et les sections au site detecte.
@@ -872,10 +1021,15 @@ fn apply_profile(profile: &'static Profile) {
         return;
     }
     with_ui(|ui| {
+        let (placeholder, chip_label) = if i18n::en() {
+            (profile.placeholder_en, profile.label_en)
+        } else {
+            (profile.placeholder, profile.label)
+        };
         ui.url_field
-            .setPlaceholderString(Some(&NSString::from_str(profile.placeholder)));
+            .setPlaceholderString(Some(&NSString::from_str(placeholder)));
         if let Some(chip) = &ui.chip_item {
-            chip.setTitle(&NSString::from_str(profile.label));
+            chip.setTitle(&NSString::from_str(chip_label));
             set_item_hidden(chip, profile.id == "default");
         }
         ui.quality_reveal.set(profile.ladder);
@@ -890,8 +1044,8 @@ fn label(text: &str, mtm: MainThreadMarker) -> Retained<NSTextField> {
     NSTextField::labelWithString(&NSString::from_str(text), mtm)
 }
 
-fn section_header(text: &str, mtm: MainThreadMarker) -> Retained<NSTextField> {
-    let l = label(text, mtm);
+fn section_header(fr: &'static str, en: &'static str, mtm: MainThreadMarker) -> Retained<NSTextField> {
+    let l = tlabel(fr, en, mtm);
     l.setFont(Some(&NSFont::systemFontOfSize_weight(11.0, unsafe {
         NSFontWeightSemibold
     })));
@@ -935,8 +1089,14 @@ fn new_switch(controller: &Controller, on: bool, mtm: MainThreadMarker) -> Retai
 
 // Ligne « libelle ........ controle ». `label_first` : le libelle ne se
 // tronque jamais (c'est le controle qui cede la place).
-fn row(text: &str, control: &NSView, label_first: bool, mtm: MainThreadMarker) -> Retained<NSStackView> {
-    let l = label(text, mtm);
+fn row(
+    fr: &'static str,
+    en: &'static str,
+    control: &NSView,
+    label_first: bool,
+    mtm: MainThreadMarker,
+) -> Retained<NSStackView> {
+    let l = tlabel(fr, en, mtm);
     l.setLineBreakMode(NSLineBreakMode::ByTruncatingTail);
     l.setContentHuggingPriority_forOrientation(1.0, NSLayoutConstraintOrientation::Horizontal);
     let (label_resist, control_resist) = if label_first { (760.0, 250.0) } else { (250.0, 760.0) };
@@ -1088,7 +1248,7 @@ fn build_ui(
                 )
             };
             b.setTag(i as isize);
-            b.setToolTip(Some(&NSString::from_str(QUALITY_LABELS[i])));
+            b.setToolTip(Some(&NSString::from_str(quality_display(i))));
             b
         })
         .collect();
@@ -1104,7 +1264,7 @@ fn build_ui(
         r.setDistribution(NSStackViewDistribution::FillEqually);
         r.setSpacing(6.0);
     }
-    let quality_header = section_header("Qualité", mtm);
+    let quality_header = section_header("Qualité", "Quality", mtm);
     let quality_content = vstack(&[&quality_header, &grid_row1, &grid_row2], 6.0, mtm);
     pin_width(&grid_row1, &quality_content, 0.0);
     pin_width(&grid_row2, &quality_content, 0.0);
@@ -1112,9 +1272,9 @@ fn build_ui(
     let quality_reveal = Reveal::new(&quality_content, 0.0, 22.0, true, mtm);
 
     // Options.
-    let options_header = section_header("Options", mtm);
+    let options_header = section_header("Options", "Options", mtm);
     let clip_switch = new_switch(controller, settings.clip, mtm);
-    let clip_row = row("Extraire un passage", &clip_switch, true, mtm);
+    let clip_row = row("Extraire un passage", "Extract a clip", &clip_switch, true, mtm);
 
     let start_field = NSTextField::textFieldWithString(ns_string!(""), mtm);
     let end_field = NSTextField::textFieldWithString(ns_string!(""), mtm);
@@ -1127,8 +1287,8 @@ fn build_ui(
         }
         f.widthAnchor().constraintEqualToConstant(72.0).setActive(true);
     }
-    let start_label = label("Début", mtm);
-    let end_label = label("Fin", mtm);
+    let start_label = tlabel("Début", "Start", mtm);
+    let end_label = tlabel("Fin", "End", mtm);
     for l in [&start_label, &end_label] {
         l.setTextColor(Some(&NSColor::secondaryLabelColor()));
     }
@@ -1137,7 +1297,7 @@ fn build_ui(
     let times_reveal = Reveal::new(&times_row, 10.0, 0.0, settings.clip, mtm);
 
     let transcode_switch = new_switch(controller, settings.transcode, mtm);
-    let transcode_row = row("Transcodage", &transcode_switch, true, mtm);
+    let transcode_row = row("Transcodage", "Transcoding", &transcode_switch, true, mtm);
 
     let output_popup = NSPopUpButton::initWithFrame_pullsDown(
         NSPopUpButton::alloc(mtm),
@@ -1149,40 +1309,26 @@ fn build_ui(
         output_popup.setTarget(Some(controller.as_target()));
         output_popup.setAction(Some(sel!(onOutput:)));
     }
-    let output_row = row("Format de sortie", &output_popup, true, mtm);
+    let output_row = row("Format de sortie", "Output format", &output_popup, true, mtm);
     let output_reveal = Reveal::new(&output_row, 10.0, 0.0, settings.transcode, mtm);
 
     let subs_switch = new_switch(controller, settings.subs, mtm);
-    let subs_row = row("Sous-titres (.srt)", &subs_switch, true, mtm);
+    let subs_row = row("Sous-titres (.srt)", "Subtitles (.srt)", &subs_switch, true, mtm);
     let subs_reveal = Reveal::new(&subs_row, 10.0, 0.0, true, mtm);
     let thumb_switch = new_switch(controller, settings.thumb, mtm);
-    let thumb_row = row("Miniature", &thumb_switch, true, mtm);
+    let thumb_row = row("Miniature", "Thumbnail", &thumb_switch, true, mtm);
     let thumb_reveal = Reveal::new(&thumb_row, 10.0, 0.0, true, mtm);
 
     // Destination.
-    let dest_header = section_header("Destination", mtm);
+    let dest_header = section_header("Destination", "Destination", mtm);
     let dest_label = label("…", mtm);
     dest_label.setLineBreakMode(NSLineBreakMode::ByTruncatingMiddle);
     dest_label.setContentCompressionResistancePriority_forOrientation(
         250.0,
         NSLayoutConstraintOrientation::Horizontal,
     );
-    let choose = unsafe {
-        NSButton::buttonWithTitle_target_action(
-            ns_string!("Choisir…"),
-            Some(controller.as_target()),
-            Some(sel!(onChooseDestination:)),
-            mtm,
-        )
-    };
-    let show = unsafe {
-        NSButton::buttonWithTitle_target_action(
-            ns_string!("Afficher"),
-            Some(controller.as_target()),
-            Some(sel!(onRevealDestination:)),
-            mtm,
-        )
-    };
+    let choose = tbutton("Choisir…", "Choose…", controller, sel!(onChooseDestination:), mtm);
+    let show = tbutton("Afficher", "Show", controller, sel!(onRevealDestination:), mtm);
     let dest_buttons = hstack(&[&choose, &show], mtm);
     dest_buttons.setDistribution(NSStackViewDistribution::FillEqually);
 
@@ -1195,14 +1341,25 @@ fn build_ui(
         250.0,
         NSLayoutConstraintOrientation::Horizontal,
     );
-    let repair_button = unsafe {
-        NSButton::buttonWithTitle_target_action(
-            ns_string!("Réparer les cookies…"),
+    foot_label.setContentHuggingPriority_forOrientation(1.0, NSLayoutConstraintOrientation::Horizontal);
+    // Roue des Reglages, a droite de l'etat (meme fenetre que Robloader > Reglages…).
+    let gear = unsafe {
+        NSButton::buttonWithImage_target_action(
+            &symbol("gearshape", tr("Réglages", "Settings")).unwrap_or_else(NSImage::new),
             Some(controller.as_target()),
-            Some(sel!(onRepair:)),
+            Some(sel!(onSettings:)),
             mtm,
         )
     };
+    gear.setBordered(false);
+    gear.setContentTintColor(Some(&NSColor::secondaryLabelColor()));
+    gear.setToolTip(Some(&NSString::from_str(tr("Réglages", "Settings"))));
+    {
+        let g = gear.clone();
+        on_relabel(move || g.setToolTip(Some(&NSString::from_str(tr("Réglages", "Settings")))));
+    }
+    let foot_row = hstack(&[&foot_label, &gear], mtm);
+    let repair_button = tbutton("Réparer les cookies…", "Repair cookies…", controller, sel!(onRepair:), mtm);
     repair_button.setHidden(true);
 
     let stack = vstack(
@@ -1218,7 +1375,7 @@ fn build_ui(
             &dest_header,
             &dest_label,
             &dest_buttons,
-            &foot_label,
+            &foot_row,
             &repair_button,
         ],
         10.0,
@@ -1249,7 +1406,7 @@ fn build_ui(
         &thumb_reveal.container,
         &dest_label,
         &dest_buttons,
-        &foot_label,
+        &foot_row,
     ] {
         pin_width(v, &stack, SIDE);
     }
@@ -1285,7 +1442,10 @@ fn build_ui(
     url_field.setUsesSingleLineMode(true);
     url_field.setLineBreakMode(NSLineBreakMode::ByTruncatingTail);
     url_field.setFont(Some(&NSFont::systemFontOfSize(13.0)));
-    url_field.setPlaceholderString(Some(&NSString::from_str(DEFAULT_PROFILE.placeholder)));
+    url_field.setPlaceholderString(Some(&NSString::from_str(tr(
+        DEFAULT_PROFILE.placeholder,
+        DEFAULT_PROFILE.placeholder_en,
+    ))));
     unsafe {
         url_field.setDelegate(Some(ProtocolObject::from_ref(controller)));
         url_field.setTarget(Some(controller.as_target()));
@@ -1295,7 +1455,7 @@ fn build_ui(
     // Mise a jour avant macOS 26 : vrai bouton de barre d'outils (vue de l'item).
     let update_button = unsafe {
         NSButton::buttonWithTitle_image_target_action(
-            ns_string!("Mise à jour"),
+            &NSString::from_str(tr("Mise à jour", "Update")),
             &led_image(true, false).unwrap_or_else(NSImage::new),
             Some(controller.as_target()),
             Some(sel!(onUpdate:)),
@@ -1304,7 +1464,7 @@ fn build_ui(
     };
     update_button.setBezelStyle(NSBezelStyle::Toolbar);
     update_button.setImagePosition(NSCellImagePosition::ImageLeading);
-    let icon = match symbol("link", "Lien") {
+    let icon = match symbol("link", tr("Lien", "Link")) {
         Some(img) => NSImageView::imageViewWithImage(&img, mtm),
         None => NSImageView::new(mtm),
     };
@@ -1438,53 +1598,73 @@ pub fn set_env(
     js_runtime: bool,
 ) {
     on_main(&app, move || {
-        with_ui(|ui| {
-            let pretty = match std::env::var("HOME") {
-                Ok(home) if download_dir.starts_with(&home) => {
-                    format!("~{}", &download_dir[home.len()..])
-                }
-                _ => download_dir.clone(),
-            };
-            ui.dest_label.setStringValue(&NSString::from_str(&pretty));
-            ui.dest_label.setToolTip(Some(&NSString::from_str(&download_dir)));
-            let mut foot = if cookies_ok {
-                format!("Cookies {cookies_source} ✓")
-            } else {
-                "Cookies absents".to_string()
-            };
-            if !js_runtime {
-                foot.push_str(" · 4K limitée (Deno absent)");
-            }
-            ui.foot_label.setStringValue(&NSString::from_str(&foot));
-            ui.repair_button.setHidden(cookies_ok);
+        LAST_ENV.with(|e| {
+            *e.borrow_mut() = Some((download_dir.clone(), cookies_ok, cookies_source.clone(), js_runtime))
         });
+        show_env(&download_dir, cookies_ok, &cookies_source, js_runtime);
+    });
+}
+
+fn show_env(download_dir: &str, cookies_ok: bool, cookies_source: &str, js_runtime: bool) {
+    with_ui(|ui| {
+        let pretty = match std::env::var("HOME") {
+            Ok(home) if download_dir.starts_with(&home) => {
+                format!("~{}", &download_dir[home.len()..])
+            }
+            _ => download_dir.to_string(),
+        };
+        ui.dest_label.setStringValue(&NSString::from_str(&pretty));
+        ui.dest_label.setToolTip(Some(&NSString::from_str(download_dir)));
+        let mut foot = if cookies_ok {
+            format!("Cookies {cookies_source} ✓")
+        } else {
+            tr("Cookies absents", "No cookies").to_string()
+        };
+        if !js_runtime {
+            foot.push_str(tr(" · 4K limitée (Deno absent)", " · 4K limited (Deno missing)"));
+        }
+        ui.foot_label.setStringValue(&NSString::from_str(&foot));
+        ui.repair_button.setHidden(cookies_ok);
     });
 }
 
 pub fn set_update(app: AppHandle, version: Option<String>, installing: bool) {
     on_main(&app, move || {
-        with_ui(|ui| {
-            let Some(item) = &ui.update_item else { return };
-            let title = NSString::from_str(if installing { "Installation…" } else { "Mise à jour" });
-            let tip = version
-                .as_ref()
-                .map(|v| NSString::from_str(&format!("Installer la version {v} et relancer")));
-            if update_tintable(item) {
-                item.setEnabled(!installing);
-                item.setTitle(&title);
-                item.setToolTip(tip.as_deref());
-            } else {
-                ui.update_button.setEnabled(!installing);
-                ui.update_button.setTitle(&title);
-                ui.update_button.setToolTip(tip.as_deref());
-            }
-            set_item_hidden(item, version.is_none());
-            if version.is_some() && !installing {
-                start_blink();
-            } else {
-                stop_blink();
-            }
+        LAST_UPDATE.with(|u| *u.borrow_mut() = (version.clone(), installing));
+        show_update(version, installing);
+    });
+}
+
+fn show_update(version: Option<String>, installing: bool) {
+    with_ui(|ui| {
+        let Some(item) = &ui.update_item else { return };
+        let title = NSString::from_str(if installing {
+            tr("Installation…", "Installing…")
+        } else {
+            tr("Mise à jour", "Update")
         });
+        let tip = version.as_ref().map(|v| {
+            NSString::from_str(&if i18n::en() {
+                format!("Install version {v} and restart")
+            } else {
+                format!("Installer la version {v} et relancer")
+            })
+        });
+        if update_tintable(item) {
+            item.setEnabled(!installing);
+            item.setTitle(&title);
+            item.setToolTip(tip.as_deref());
+        } else {
+            ui.update_button.setEnabled(!installing);
+            ui.update_button.setTitle(&title);
+            ui.update_button.setToolTip(tip.as_deref());
+        }
+        set_item_hidden(item, version.is_none());
+        if version.is_some() && !installing {
+            start_blink();
+        } else {
+            stop_blink();
+        }
     });
 }
 
@@ -1501,4 +1681,175 @@ pub fn toolbar_height(app: AppHandle) -> f64 {
         let _ = tx.send(h);
     });
     rx.recv().unwrap_or(52.0)
+}
+
+// ---------- Reglages et choix de la langue ----------
+
+const SOURCE_URL: &str = "https://github.com/Splainte/Robloader";
+
+thread_local! {
+    static SETTINGS_WINDOW: RefCell<Option<Retained<NSWindow>>> = const { RefCell::new(None) };
+}
+
+/// Ouvre la fenetre Reglages (menu Robloader > Reglages… et roue du volet).
+pub fn open_settings(app: &AppHandle) {
+    on_main(app, show_settings_window);
+}
+
+// Francais / English cote a cote, a jour apres chaque changement de langue.
+fn language_control(controller: &Controller, mtm: MainThreadMarker) -> Retained<NSSegmentedControl> {
+    let labels = NSArray::from_retained_slice(&[
+        NSString::from_str("Français"),
+        NSString::from_str("English"),
+    ]);
+    let seg = unsafe {
+        NSSegmentedControl::segmentedControlWithLabels_trackingMode_target_action(
+            &labels,
+            NSSegmentSwitchTracking::SelectOne,
+            Some(controller.as_target()),
+            Some(sel!(onLanguage:)),
+            mtm,
+        )
+    };
+    seg.setSelectedSegment(if i18n::en() { 1 } else { 0 });
+    let c = seg.clone();
+    on_relabel(move || c.setSelectedSegment(if i18n::en() { 1 } else { 0 }));
+    seg
+}
+
+fn show_settings_window() {
+    let Some(mtm) = MainThreadMarker::new() else { return };
+    if let Some(window) = SETTINGS_WINDOW.with(|w| w.borrow().clone()) {
+        window.makeKeyAndOrderFront(None);
+        return;
+    }
+    let Some(controller) = CONTROLLER.with(|c| c.borrow().clone()) else { return };
+    const WIDTH: f64 = 420.0;
+    const PAD: f64 = 24.0;
+
+    // Langue.
+    let lang_label = tlabel("Langue :", "Language:", mtm);
+    let seg = language_control(&controller, mtm);
+    let lang_row = hstack(&[&lang_label, &seg], mtm);
+    lang_row.setSpacing(10.0);
+    let hint = tlabel(
+        "S'applique tout de suite, sans redémarrer.",
+        "Applies right away, no restart needed.",
+        mtm,
+    );
+    hint.setFont(Some(&NSFont::systemFontOfSize(11.0)));
+    hint.setTextColor(Some(&NSColor::secondaryLabelColor()));
+
+    let separator = NSBox::new(mtm);
+    separator.setBoxType(NSBoxType::Separator);
+
+    // A propos : icone, version, licence, code source.
+    let icon = NSImageView::new(mtm);
+    if let Some(img) = NSApplication::sharedApplication(mtm).applicationIconImage() {
+        icon.setImage(Some(&img));
+    }
+    icon.widthAnchor().constraintEqualToConstant(56.0).setActive(true);
+    icon.heightAnchor().constraintEqualToConstant(56.0).setActive(true);
+    let name = label("Robloader", mtm);
+    name.setFont(Some(&NSFont::systemFontOfSize_weight(13.0, unsafe { NSFontWeightBold })));
+    let version_text = {
+        let v = controller.ivars().version.clone();
+        move || {
+            if i18n::en() {
+                format!("Version {v} · MIT License")
+            } else {
+                format!("Version {v} · licence MIT")
+            }
+        }
+    };
+    let version = label(&version_text(), mtm);
+    version.setFont(Some(&NSFont::systemFontOfSize(12.0)));
+    version.setTextColor(Some(&NSColor::secondaryLabelColor()));
+    {
+        let l = version.clone();
+        on_relabel(move || l.setStringValue(&NSString::from_str(&version_text())));
+    }
+    let link = tbutton(
+        "Code source sur GitHub",
+        "Source code on GitHub",
+        &controller,
+        sel!(onOpenSource:),
+        mtm,
+    );
+    link.setBordered(false);
+    link.setContentTintColor(Some(&NSColor::linkColor()));
+    let about_text = vstack(&[&name, &version, &link], 3.0, mtm);
+    let about = hstack(&[&icon, &about_text], mtm);
+    about.setSpacing(14.0);
+
+    let content = vstack(&[&lang_row, &hint, &separator, &about], 12.0, mtm);
+    content.setEdgeInsets(NSEdgeInsets { top: 20.0, left: PAD, bottom: 22.0, right: PAD });
+    content.setCustomSpacing_afterView(18.0, &hint);
+    content.setCustomSpacing_afterView(18.0, &separator);
+    content.setTranslatesAutoresizingMaskIntoConstraints(false);
+    content.widthAnchor().constraintEqualToConstant(WIDTH).setActive(true);
+    pin_width(&separator, &content, PAD);
+
+    let window = unsafe {
+        NSWindow::initWithContentRect_styleMask_backing_defer(
+            NSWindow::alloc(mtm),
+            NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(WIDTH, 220.0)),
+            NSWindowStyleMask::Titled | NSWindowStyleMask::Closable,
+            NSBackingStoreType::Buffered,
+            false,
+        )
+    };
+    unsafe { window.setReleasedWhenClosed(false) };
+    window.setTitle(&NSString::from_str(tr("Réglages", "Settings")));
+    {
+        let w = window.clone();
+        on_relabel(move || w.setTitle(&NSString::from_str(tr("Réglages", "Settings"))));
+    }
+    window.setContentView(Some(&content));
+    window.setContentSize(content.fittingSize());
+    window.center();
+    window.makeKeyAndOrderFront(None);
+    SETTINGS_WINDOW.with(|w| *w.borrow_mut() = Some(window));
+}
+
+/// 1er lancement sans langue enregistree (macOS n'a pas d'installeur) :
+/// feuille sur la fenetre, langue du systeme preselectionnee. Le choix
+/// s'applique des le clic ; « Continuer » l'enregistre.
+pub fn first_run(app: &AppHandle) {
+    on_main(app, show_first_run);
+}
+
+fn show_first_run() {
+    let Some(mtm) = MainThreadMarker::new() else { return };
+    let Some(controller) = CONTROLLER.with(|c| c.borrow().clone()) else { return };
+    let Some(window) = with_ui(|ui| ui.window.clone()) else { return };
+
+    let title = || tr("Bienvenue dans Robloader", "Welcome to Robloader");
+    let body = || {
+        tr(
+            "Choisis la langue de l'app. Tu pourras la changer plus tard dans Réglages (⌘,).",
+            "Choose the app language. You can change it later in Settings (⌘,).",
+        )
+    };
+    let alert = NSAlert::new(mtm);
+    alert.setMessageText(&NSString::from_str(title()));
+    alert.setInformativeText(&NSString::from_str(body()));
+    let button = alert.addButtonWithTitle(&NSString::from_str(tr("Continuer", "Continue")));
+    let seg = language_control(&controller, mtm);
+    seg.sizeToFit();
+    alert.setAccessoryView(Some(&seg));
+    {
+        let (alert, button) = (alert.clone(), button.clone());
+        on_relabel(move || {
+            alert.setMessageText(&NSString::from_str(title()));
+            alert.setInformativeText(&NSString::from_str(body()));
+            button.setTitle(&NSString::from_str(tr("Continuer", "Continue")));
+            alert.layout();
+        });
+    }
+    let app = controller.ivars().app.clone();
+    let done = RcBlock::new(move |_response: isize| {
+        i18n::apply(&app, i18n::lang());
+    });
+    alert.beginSheetModalForWindow_completionHandler(&window, Some(&done));
 }

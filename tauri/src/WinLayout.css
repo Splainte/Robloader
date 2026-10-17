@@ -30,6 +30,10 @@
   --w-ok: #0f7b0f;
   --w-warn: #9d5d00;
   --w-err: #c42b1c;
+  --w-dialog: #ffffff;
+  --w-dialog-foot: #f3f3f3;
+  --w-smoke: rgba(0, 0, 0, 0.3);
+  --w-radio-off: rgba(0, 0, 0, 0.45);
 
   height: 100%;
   display: grid;
@@ -69,6 +73,10 @@
     --w-ok: #6ccb5f;
     --w-warn: #fce100;
     --w-err: #ff99a4;
+    --w-dialog: #2b2b2b;
+    --w-dialog-foot: #202020;
+    --w-smoke: rgba(0, 0, 0, 0.45);
+    --w-radio-off: rgba(255, 255, 255, 0.6);
   }
 }
 
@@ -479,14 +487,31 @@
 }
 .w-pane__foot {
   margin-top: auto;
-  padding: 16px 4px 0;
+  padding: 16px 0 0 4px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--w-text-2);
+}
+.w-pane__state {
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 4px 12px;
   align-items: center;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--w-text-2);
+}
+/* Roue des Reglages : bouton discret, carre. */
+.w-btn--icon {
+  width: 32px;
+  padding: 0;
+  flex: 0 0 auto;
+  color: var(--w-text);
+}
+.w-btn--icon.is-active {
+  background: var(--w-subtle-hover);
 }
 .w-dot {
   display: inline-block;
@@ -779,4 +804,141 @@
   height: 1px;
   margin: 4px 0;
   background: var(--w-card-stroke);
+}
+
+/* ---------- Boites de dialogue (Reglages, 1er lancement) ---------- */
+.w-smoke {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: var(--w-smoke);
+}
+.w-dialog {
+  width: min(448px, calc(100vw - 48px));
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--w-dialog);
+  border: 1px solid var(--w-menu-stroke);
+  box-shadow: 0 32px 64px rgba(0, 0, 0, 0.19), 0 2px 21px rgba(0, 0, 0, 0.15);
+}
+.w-dialog__body {
+  padding: 24px 24px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.w-dialog__title {
+  margin: 0 0 14px;
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+}
+.w-dialog__text {
+  margin: 0 0 8px;
+}
+.w-dialog__foot {
+  padding: 24px;
+  display: flex;
+  justify-content: flex-end;
+  background: var(--w-dialog-foot);
+  border-top: 1px solid var(--w-card-stroke);
+}
+.w-dialog__btn {
+  width: calc(50% - 4px);
+}
+
+/* Carte de reglage (icone + libelle + controle), facon Parametres de Windows. */
+.w-setting {
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 4px;
+  background: var(--w-card);
+  border: 1px solid var(--w-card-stroke);
+}
+.w-setting__icon {
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  flex: 0 0 auto;
+}
+.w-setting__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.w-setting__main--tight {
+  gap: 2px;
+}
+.w-setting__hint {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--w-text-2);
+}
+.w-setting__link {
+  align-self: flex-start;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* Boutons radio Fluent. */
+.w-radios {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.w-radio {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+  cursor: default;
+}
+.w-radio input {
+  position: absolute;
+  opacity: 0;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+}
+.w-radio__dot {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1px solid var(--w-radio-off);
+  background: var(--w-control);
+  display: grid;
+  place-items: center;
+}
+.w-radio__dot::after {
+  content: "";
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: var(--w-accent-text);
+  transition: width 0.1s ease, height 0.1s ease;
+}
+.w-radio input:checked + .w-radio__dot {
+  background: var(--w-accent);
+  border-color: var(--w-accent);
+}
+.w-radio input:checked + .w-radio__dot::after {
+  width: 8px;
+  height: 8px;
+}
+.w-radio:hover input:checked + .w-radio__dot::after {
+  width: 10px;
+  height: 10px;
+}
+.w-radio input:focus-visible + .w-radio__dot {
+  outline: 2px solid var(--w-text);
+  outline-offset: 1px;
 }

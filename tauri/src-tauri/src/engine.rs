@@ -15,6 +15,8 @@ use std::sync::{Arc, Condvar, Mutex};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::i18n::{self, tr};
+
 // ---------- Constantes reprises de Robloader.py ----------
 
 const COOKIE_FIX_URL: &str =
@@ -113,6 +115,10 @@ struct TaskUpdate {
     final_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     done: Option<bool>,
+    // Etape en cours, independante de la langue du statut : "download"
+    // (anneau d'accent) ou "process" (decoupe/conversion, anneau violet).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    phase: Option<String>,
 }
 
 fn emit(app: &AppHandle, u: TaskUpdate) {
@@ -584,6 +590,7 @@ fn run_ytdlp_download(
                                 status_kind: Some("info".into()),
                                 percent: Some(pct),
                                 indeterminate: Some(false),
+                                phase: Some("download".into()),
                                 ..Default::default()
                             },
                         );
@@ -624,6 +631,7 @@ fn run_ffmpeg(
                                 status_kind: Some("info".into()),
                                 percent: Some(pct),
                                 indeterminate: Some(false),
+                                phase: Some("process".into()),
                                 ..Default::default()
                             },
                         );
@@ -749,7 +757,7 @@ fn download_pipeline(app: &AppHandle, handle: &TaskHandle, opts: &DownloadOpts, 
                 }
             }
             if handle.cancelled() {
-                status(app, id, "Annulé.", "warn");
+                status(app, id, tr("Annulé.", "Cancelled."), "warn");
                 emit(
                     app,
                     TaskUpdate {
@@ -765,8 +773,12 @@ fn download_pipeline(app: &AppHandle, handle: &TaskHandle, opts: &DownloadOpts, 
                 status(
                     app,
                     id,
-                    "YouTube demande une connexion (vérification anti-robot). \
-                     Tes cookies sont absents ou expirés — clique sur « Réparer ».",
+                    tr(
+                        "YouTube demande une connexion (vérification anti-robot). \
+                         Tes cookies sont absents ou expirés — clique sur « Réparer ».",
+                        "YouTube asks you to sign in (anti-bot check). \
+                         Your cookies are missing or expired — click “Repair”.",
+                    ),
                     "err",
                 );
                 emit(
@@ -781,7 +793,7 @@ fn download_pipeline(app: &AppHandle, handle: &TaskHandle, opts: &DownloadOpts, 
                     },
                 );
             } else {
-                status(app, id, &format!("Échec : {e}"), "err");
+                status(app, id, &if i18n::en() { format!("Failed: {e}") } else { format!("Échec : {e}") }, "err");
                 emit(
                     app,
                     TaskUpdate {
@@ -800,7 +812,7 @@ fn download_pipeline(app: &AppHandle, handle: &TaskHandle, opts: &DownloadOpts, 
 
 fn check_cancel(handle: &TaskHandle) -> Result<(), String> {
     if handle.cancelled() {
-        Err("Annulé par l'utilisateur".into())
+        Err(tr("Annulé par l'utilisateur", "Cancelled by the user").into())
     } else {
         Ok(())
     }
@@ -853,7 +865,7 @@ fn run_pipeline_inner(
     let end_seconds = parse_timecode(&opts.end);
     if let (Some(s), Some(e)) = (start_seconds, end_seconds) {
         if e <= s {
-            return Err("Extrait invalide : le timecode de fin doit être après le début.".into());
+            return Err(tr("Extrait invalide : le timecode de fin doit être après le début.", "Invalid clip: the end timecode must be after the start.").into());
         }
     }
 
@@ -888,7 +900,7 @@ fn run_pipeline_inner(
         app,
         TaskUpdate {
             id,
-            status: Some("Analyse de la vidéo…".into()),
+            status: Some(tr("Analyse de la vidéo…", "Analyzing the video…").into()),
             status_kind: Some("info".into()),
             indeterminate: Some(true),
             ..Default::default()
@@ -897,7 +909,7 @@ fn run_pipeline_inner(
 
     let mut info_json: Option<serde_json::Value> = None;
     let mut used_cookie = CookieAttempt::None;
-    let mut last_err = String::from("Analyse impossible");
+    let mut last_err = String::from(tr("Analyse impossible", "Analysis failed"));
     let attempts = cookie_attempts(app);
     for (i, attempt) in attempts.iter().enumerate() {
         check_cancel(handle)?;
@@ -906,7 +918,7 @@ fn run_pipeline_inner(
                 status(
                     app,
                     id,
-                    "Cookies indisponibles — analyse sans cookies (4K limitée)…",
+                    tr("Cookies indisponibles — analyse sans cookies (4K limitée)…", "Cookies unavailable — analyzing without cookies (4K limited)…"),
                     "warn",
                 );
             }
@@ -936,7 +948,7 @@ fn run_pipeline_inner(
             }
         }
         if !err.trim().is_empty() {
-            last_err = err.trim().lines().last().unwrap_or("Analyse impossible").to_string();
+            last_err = err.trim().lines().last().unwrap_or(tr("Analyse impossible", "Analysis failed")).to_string();
         }
     }
     let info = info_json.ok_or(last_err)?;
@@ -1016,7 +1028,7 @@ fn run_pipeline_inner(
 
     if subs_only {
         // ---- Sous-titres seuls ----
-        status(app, id, "Téléchargement des sous-titres…", "info");
+        status(app, id, tr("Téléchargement des sous-titres…", "Downloading subtitles…"), "info");
         emit(app, TaskUpdate { id, indeterminate: Some(true), ..Default::default() });
         let mut cmd = Command::new(&bins.ytdlp);
         base_ytdlp_args(&mut cmd, bins, remote);
@@ -1048,11 +1060,11 @@ fn run_pipeline_inner(
             None => srts
                 .into_iter()
                 .next()
-                .ok_or("Aucun sous-titre disponible pour cette vidéo.")?,
+                .ok_or(tr("Aucun sous-titre disponible pour cette vidéo.", "No subtitles available for this video."))?,
         };
     } else if audio_mode {
         // ---- Audio seul : DL complet natif puis decoupe/conversion ----
-        status(app, id, "Téléchargement audio…", "info");
+        status(app, id, tr("Téléchargement audio…", "Downloading audio…"), "info");
         let temp_tmpl = download_dir.join(format!("temp_{video_id}.%(ext)s"));
         let mut cmd = Command::new(&bins.ytdlp);
         base_ytdlp_args(&mut cmd, bins, remote);
@@ -1066,14 +1078,14 @@ fn run_pipeline_inner(
         add_subs_thumb(&mut cmd, opts.subs, opts.thumb);
         apply_cookies(&mut cmd, &used_cookie);
         cmd.arg(url);
-        let (code, err) = run_ytdlp_download(handle, app, id, cmd, "Téléchargement audio…")
+        let (code, err) = run_ytdlp_download(handle, app, id, cmd, tr("Téléchargement audio…", "Downloading audio…"))
             .map_err(|e| e.to_string())?;
         check_cancel(handle)?;
         if code != 0 {
             return Err(if err.trim().is_empty() {
-                "Téléchargement audio échoué.".into()
+                tr("Téléchargement audio échoué.", "Audio download failed.").into()
             } else {
-                err.trim().lines().last().unwrap_or("Téléchargement audio échoué.").to_string()
+                err.trim().lines().last().unwrap_or(tr("Téléchargement audio échoué.", "Audio download failed.")).to_string()
             });
         }
         let src = files_with_prefix(download_dir, &format!("temp_{video_id}"))
@@ -1082,9 +1094,9 @@ fn run_pipeline_inner(
                 let e = ext_lower(p);
                 !["srt", "jpg", "jpeg", "png", "webp", "part"].contains(&e.as_str())
             })
-            .ok_or("Téléchargement audio échoué.")?;
+            .ok_or(tr("Téléchargement audio échoué.", "Audio download failed."))?;
 
-        status(app, id, "Conversion audio…", "info");
+        status(app, id, tr("Conversion audio…", "Converting audio…"), "info");
         final_path = download_dir.join(format!("{base_title}.{audio_codec}"));
         let mut args: Vec<String> = vec!["-y".into(), "-progress".into(), "pipe:1".into()];
         args.extend(seek.clone());
@@ -1094,11 +1106,11 @@ fn run_pipeline_inner(
         args.push("-vn".into());
         args.extend(["-c:a", "pcm_s16le"].map(String::from));
         args.push(final_path.to_string_lossy().to_string());
-        let rc = run_ffmpeg(handle, app, id, &bins.ffmpeg, &args, segment_duration, "Conversion audio…")
+        let rc = run_ffmpeg(handle, app, id, &bins.ffmpeg, &args, segment_duration, tr("Conversion audio…", "Converting audio…"))
             .map_err(|e| e.to_string())?;
         check_cancel(handle)?;
         if rc != 0 {
-            return Err("La conversion audio a échoué.".into());
+            return Err(tr("La conversion audio a échoué.", "Audio conversion failed.").into());
         }
         let _ = std::fs::remove_file(&src);
     } else {
@@ -1107,9 +1119,9 @@ fn run_pipeline_inner(
             app,
             id,
             if has_range {
-                "Téléchargement (segment découpé ensuite)…"
+                tr("Téléchargement (segment découpé ensuite)…", "Downloading (clip cut afterwards)…")
             } else {
-                "Téléchargement…"
+                tr("Téléchargement…", "Downloading…")
             },
             "info",
         );
@@ -1134,7 +1146,7 @@ fn run_pipeline_inner(
             add_subs_thumb(&mut cmd, opts.subs, opts.thumb);
             apply_cookies(&mut cmd, &used_cookie);
             cmd.arg(url);
-            run_ytdlp_download(handle, app, id, cmd, "Téléchargement…").map_err(|e| e.to_string())
+            run_ytdlp_download(handle, app, id, cmd, tr("Téléchargement…", "Downloading…")).map_err(|e| e.to_string())
         };
 
         let cleanup_partial = || {
@@ -1146,7 +1158,7 @@ fn run_pipeline_inner(
         let (mut code, mut err) = run_dl(&dl_format)?;
         if code != 0 && !handle.cancelled() && dl_format != fallback_format {
             cleanup_partial();
-            status(app, id, "Qualité max indisponible — repli en 1080p…", "warn");
+            status(app, id, tr("Qualité max indisponible — repli en 1080p…", "Max quality unavailable — falling back to 1080p…"), "warn");
             let r = run_dl(&fallback_format)?;
             code = r.0;
             err = r.1;
@@ -1154,9 +1166,9 @@ fn run_pipeline_inner(
         check_cancel(handle)?;
         if code != 0 {
             return Err(if err.trim().is_empty() {
-                "Téléchargement échoué.".into()
+                tr("Téléchargement échoué.", "Download failed.").into()
             } else {
-                err.trim().lines().last().unwrap_or("Téléchargement échoué.").to_string()
+                err.trim().lines().last().unwrap_or(tr("Téléchargement échoué.", "Download failed.")).to_string()
             });
         }
 
@@ -1167,7 +1179,7 @@ fn run_pipeline_inner(
                     let e = ext_lower(p);
                     e != "part" && !["srt", "jpg", "jpeg", "png", "webp"].contains(&e.as_str())
                 })
-                .ok_or("Fichier téléchargé introuvable.")?;
+                .ok_or(tr("Fichier téléchargé introuvable.", "Downloaded file not found."))?;
             let actual_ext = ext_lower(&temp_file);
             let vp = probe_video(&bins.ffprobe, &temp_file);
             let res = resolution_label(vp.width, vp.height);
@@ -1179,7 +1191,7 @@ fn run_pipeline_inner(
             emit(app, TaskUpdate { id, title: Some(final_title.clone()), ..Default::default() });
             final_path = download_dir.join(format!("{final_title}.{actual_ext}"));
             if has_range {
-                status(app, id, "Découpe du segment (copie flux)…", "info");
+                status(app, id, tr("Découpe du segment (copie flux)…", "Cutting the clip (stream copy)…"), "info");
                 let mut args: Vec<String> = vec!["-y".into(), "-progress".into(), "pipe:1".into()];
                 args.extend(seek.clone());
                 args.push("-i".into());
@@ -1187,14 +1199,14 @@ fn run_pipeline_inner(
                 args.extend(dur.clone());
                 args.extend(["-c", "copy"].map(String::from));
                 args.push(final_path.to_string_lossy().to_string());
-                let rc = run_ffmpeg(handle, app, id, &bins.ffmpeg, &args, segment_duration, "Découpe…")
+                let rc = run_ffmpeg(handle, app, id, &bins.ffmpeg, &args, segment_duration, tr("Découpe…", "Cutting…"))
                     .map_err(|e| e.to_string())?;
                 if rc != 0 {
-                    return Err("La découpe du segment a échoué.".into());
+                    return Err(tr("La découpe du segment a échoué.", "Cutting the clip failed.").into());
                 }
                 let _ = std::fs::remove_file(&temp_file);
             } else {
-                status(app, id, "Finalisation…", "info");
+                status(app, id, tr("Finalisation…", "Finalizing…"), "info");
                 let _ = std::fs::remove_file(&final_path);
                 std::fs::rename(&temp_file, &final_path).map_err(|e| e.to_string())?;
             }
@@ -1213,12 +1225,12 @@ fn run_pipeline_inner(
             final_path = download_dir.join(format!("{final_title}.{ext}"));
 
             if !needs_transcode && !has_range {
-                status(app, id, "Finalisation…", "info");
+                status(app, id, tr("Finalisation…", "Finalizing…"), "info");
                 let _ = std::fs::remove_file(&final_path);
                 std::fs::rename(&temp_file, &final_path).map_err(|e| e.to_string())?;
             } else if !needs_transcode && has_range {
                 // Decoupe PRECISE en H.264 (le 'copy' deborde sur la keyframe).
-                status(app, id, "Découpe du segment…", "info");
+                status(app, id, tr("Découpe du segment…", "Cutting the clip…"), "info");
                 let mut args: Vec<String> = vec!["-y".into(), "-progress".into(), "pipe:1".into()];
                 args.extend(seek.clone());
                 args.push("-i".into());
@@ -1232,10 +1244,10 @@ fn run_pipeline_inner(
                     .map(String::from),
                 );
                 args.push(final_path.to_string_lossy().to_string());
-                let rc = run_ffmpeg(handle, app, id, &bins.ffmpeg, &args, segment_duration, "Découpe…")
+                let rc = run_ffmpeg(handle, app, id, &bins.ffmpeg, &args, segment_duration, tr("Découpe…", "Cutting…"))
                     .map_err(|e| e.to_string())?;
                 if rc != 0 {
-                    return Err("La découpe du segment a échoué.".into());
+                    return Err(tr("La découpe du segment a échoué.", "Cutting the clip failed.").into());
                 }
                 let _ = std::fs::remove_file(&temp_file);
             } else {
@@ -1249,7 +1261,7 @@ fn run_pipeline_inner(
                     Vec<&str>,
                 ) = if want_prores {
                     (
-                        "Conversion ProRes…",
+                        tr("Conversion ProRes…", "Converting to ProRes…"),
                         if is_mac {
                             vec!["-c:v", "prores_videotoolbox", "-profile:v", "3"]
                         } else {
@@ -1261,7 +1273,7 @@ fn run_pipeline_inner(
                     )
                 } else {
                     (
-                        "Conversion H.265…",
+                        tr("Conversion H.265…", "Converting to H.265…"),
                         if is_mac {
                             vec!["-c:v", "hevc_videotoolbox", "-q:v", "65", "-tag:v", "hvc1"]
                         } else {
@@ -1293,7 +1305,7 @@ fn run_pipeline_inner(
                     .map_err(|e| e.to_string())?;
                 check_cancel(handle)?;
                 if rc != 0 {
-                    status(app, id, "Encodage CPU (secours)…", "warn");
+                    status(app, id, tr("Encodage CPU (secours)…", "CPU encoding (fallback)…"), "warn");
                     emit(app, TaskUpdate { id, percent: Some(0.0), ..Default::default() });
                     let rc2 = run_ffmpeg(
                         handle,
@@ -1302,12 +1314,12 @@ fn run_pipeline_inner(
                         &bins.ffmpeg,
                         &build(&venc_cpu, &aenc_cpu),
                         segment_duration,
-                        "Encodage CPU…",
+                        tr("Encodage CPU…", "CPU encoding…"),
                     )
                     .map_err(|e| e.to_string())?;
                     check_cancel(handle)?;
                     if rc2 != 0 {
-                        return Err("Le transcodage vidéo a échoué.".into());
+                        return Err(tr("Le transcodage vidéo a échoué.", "Video transcoding failed.").into());
                     }
                 }
                 let _ = std::fs::remove_file(&temp_file);
@@ -1335,15 +1347,15 @@ fn run_pipeline_inner(
     }
 
     let done_msg = if subs_only {
-        "Terminé ✓ Sous-titres (.srt)".to_string()
+        tr("Terminé ✓ Sous-titres (.srt)", "Done ✓ Subtitles (.srt)").to_string()
     } else if audio_mode {
-        format!("Terminé ✓ Audio {}", audio_codec.to_uppercase())
+        if i18n::en() { format!("Done ✓ Audio {}", audio_codec.to_uppercase()) } else { format!("Terminé ✓ Audio {}", audio_codec.to_uppercase()) }
     } else if want_prores {
-        "Terminé ✓ ProRes (.mov)".to_string()
+        tr("Terminé ✓ ProRes (.mov)", "Done ✓ ProRes (.mov)").to_string()
     } else if native_video {
-        format!("Terminé ✓ Vidéo native (.{})", ext_lower(&final_path))
+        if i18n::en() { format!("Done ✓ Native video (.{})", ext_lower(&final_path)) } else { format!("Terminé ✓ Vidéo native (.{})", ext_lower(&final_path)) }
     } else {
-        "Terminé ✓".to_string()
+        tr("Terminé ✓", "Done ✓").to_string()
     };
     let _ = dir_str; // (garde la coherence avec la version Python)
     emit(
@@ -1403,6 +1415,47 @@ fn hkcu_dword(subkey: &str, value: &str) -> Option<u32> {
         )
     };
     (rc == 0).then_some(data)
+}
+
+// Windows : lit une chaine du registre (HKEY_CURRENT_USER), meme methode que
+// `hkcu_dword` (langue choisie dans l'installeur, cf. i18n.rs).
+#[cfg(windows)]
+pub fn hkcu_string(subkey: &str, value: &str) -> Option<String> {
+    extern "system" {
+        fn RegGetValueW(
+            hkey: isize,
+            sub_key: *const u16,
+            value: *const u16,
+            flags: u32,
+            typ: *mut u32,
+            data: *mut core::ffi::c_void,
+            data_len: *mut u32,
+        ) -> i32;
+    }
+    // Extension par ZEROS, cf. hkcu_dword.
+    const HKEY_CURRENT_USER: isize = 0x8000_0001u32 as isize;
+    const RRF_RT_REG_SZ: u32 = 0x0000_0002;
+
+    let wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
+    let (sk, v) = (wide(subkey), wide(value));
+    let mut buf = [0u16; 64];
+    let mut len = (buf.len() * 2) as u32; // taille du tampon en OCTETS
+    let rc = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            sk.as_ptr(),
+            v.as_ptr(),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr() as *mut core::ffi::c_void,
+            &mut len,
+        )
+    };
+    if rc != 0 {
+        return None;
+    }
+    let end = buf.iter().position(|&c| c == 0).unwrap_or(0);
+    Some(String::from_utf16_lossy(&buf[..end]))
 }
 
 // Retourne la couleur d'accent exacte issue des reglages de l'OS.
@@ -1538,7 +1591,7 @@ pub async fn install_update(app: AppHandle, url: String) -> Result<(), String> {
     no_window(&mut cmd);
     let status = cmd.status().map_err(|e| e.to_string())?;
     if !status.success() {
-        return Err("Échec du téléchargement".into());
+        return Err(tr("Échec du téléchargement", "Download failed").into());
     }
 
     // Lancement de l'installeur.
@@ -1623,23 +1676,29 @@ pub struct EnvInfo {
 }
 
 #[derive(Deserialize, Serialize, Default)]
-struct PersistConfig {
+pub struct PersistConfig {
     #[serde(default)]
     download_dir: Option<String>,
+    // Langue de l'interface (« fr » / « en »), cf. i18n.rs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    // Derniere langue de l'installeur Windows prise en compte.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installer_language: Option<String>,
 }
 
 fn config_file() -> PathBuf {
     config_dir().join("config.json")
 }
 
-fn load_config() -> PersistConfig {
+pub fn load_config() -> PersistConfig {
     std::fs::read_to_string(config_file())
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
 }
 
-fn save_config(cfg: &PersistConfig) {
+pub fn save_config(cfg: &PersistConfig) {
     let _ = std::fs::create_dir_all(config_dir());
     if let Ok(s) = serde_json::to_string(cfg) {
         let _ = std::fs::write(config_file(), s);
@@ -1739,7 +1798,7 @@ pub fn start_download(app: AppHandle, state: State<Engine>, opts: DownloadOpts) 
             Some(_permit) => download_pipeline(&app, &handle, &opts2, &bins),
             None => {
                 // Annulee alors qu'elle attendait encore son tour.
-                status(&app, opts2.id, "Annulé.", "warn");
+                status(&app, opts2.id, tr("Annulé.", "Cancelled."), "warn");
                 emit(
                     &app,
                     TaskUpdate {
@@ -1791,6 +1850,12 @@ pub fn reveal_in_folder(path: String) {
 #[tauri::command]
 pub fn open_cookie_help() {
     open_url(COOKIE_FIX_URL);
+}
+
+// Page du code source (Reglages > A propos, Windows).
+#[tauri::command]
+pub fn open_source_page() {
+    open_url("https://github.com/Splainte/Robloader");
 }
 
 fn open_url(url: &str) {
