@@ -7,8 +7,10 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { EnvInfo, Profile, Task } from "./App";
+import { outputDisplay, qualityDisplay, type EnvInfo, type Profile, type Task } from "./App";
 import appIcon from "./assets/app-icon.png";
+import { languagePickNeeded, useT } from "./i18n";
+import { FirstRunDialog, SettingsDialog } from "./SettingsDialog";
 import "./WinLayout.css";
 
 const appWindow = getCurrentWindow();
@@ -64,8 +66,10 @@ const I = {
   chevron: <path d="M5.5 8 10 12.5 14.5 8" />,
   check: <path d="M4.5 10.5 8 14l7.5-8" />,
   update: <path d="M15.5 8A6 6 0 0 0 4.3 6.5M4.5 12a6 6 0 0 0 11.2 1.5M15.5 3.5V8H11M4.5 16.5V12H9" />,
+  settings: <><path d="M8.6 2.5h2.8l.4 2.1a5.6 5.6 0 0 1 1.5.9l2-.7 1.4 2.4-1.6 1.4a5.6 5.6 0 0 1 0 1.8l1.6 1.4-1.4 2.4-2-.7a5.6 5.6 0 0 1-1.5.9l-.4 2.1H8.6l-.4-2.1a5.6 5.6 0 0 1-1.5-.9l-2 .7-1.4-2.4 1.6-1.4a5.6 5.6 0 0 1 0-1.8L3.3 7.2l1.4-2.4 2 .7a5.6 5.6 0 0 1 1.5-.9z" /><circle cx="10" cy="10" r="2.3" /></>,
+  globe: <><circle cx="10" cy="10" r="7.5" /><path d="M2.5 10h15M10 2.5c2.2 2.1 3.2 4.6 3.2 7.5s-1 5.4-3.2 7.5c-2.2-2.1-3.2-4.6-3.2-7.5s1-5.4 3.2-7.5z" /></>,
 };
-function Ico({ d, className }: { d: keyof typeof I; className?: string }) {
+export function Ico({ d, className }: { d: keyof typeof I; className?: string }) {
   return (
     <svg className={`wi ${className ?? ""}`} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {I[d]}
@@ -74,9 +78,10 @@ function Ico({ d, className }: { d: keyof typeof I; className?: string }) {
 }
 
 function Toggle({ id, checked, onChange, label }: { id: string; checked: boolean; onChange: (v: boolean) => void; label: string }) {
+  const t = useT();
   return (
     <>
-      <span className="w-state">{checked ? "Activé" : "Désactivé"}</span>
+      <span className="w-state">{checked ? t("pane.on") : t("pane.off")}</span>
       <button
         type="button"
         id={id}
@@ -92,7 +97,8 @@ function Toggle({ id, checked, onChange, label }: { id: string; checked: boolean
 
 // ComboBox Fluent : menu en position fixe (jamais rogne par le volet qui defile),
 // ouvert centre sur l'element choisi comme sous Windows 11.
-function ComboBox({ id, value, values, onChange, label }: { id: string; value: string; values: string[]; onChange: (v: string) => void; label: string }) {
+// `display` : libelle affiche de chaque valeur (traduction).
+function ComboBox({ id, value, values, onChange, label, display = (v) => v }: { id: string; value: string; values: string[]; onChange: (v: string) => void; label: string; display?: (v: string) => string }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
   const btn = useRef<HTMLButtonElement>(null);
@@ -140,7 +146,7 @@ function ComboBox({ id, value, values, onChange, label }: { id: string; value: s
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
-        <span>{value}</span>
+        <span>{display(value)}</span>
         <Ico d="chevron" />
       </button>
       {open && pos && (
@@ -158,7 +164,7 @@ function ComboBox({ id, value, values, onChange, label }: { id: string; value: s
                 btn.current?.focus();
               }}
             >
-              {v}
+              {display(v)}
             </button>
           ))}
         </div>
@@ -170,7 +176,7 @@ function ComboBox({ id, value, values, onChange, label }: { id: string; value: s
 // Anneau de progression : accent au telechargement, violet au transcodage.
 const RING_C = 2 * Math.PI * 9;
 function Ring({ task }: { task: Task }) {
-  const tc = !task.indeterminate && !task.status.startsWith("Téléchargement");
+  const tc = !task.indeterminate && task.phase === "process";
   const p = task.indeterminate ? 0.25 : task.percent;
   return (
     <svg className={`w-ring${task.indeterminate ? " is-spinning" : ""}${tc ? " is-transcode" : ""}`} viewBox="0 0 22 22" aria-hidden="true">
@@ -181,6 +187,7 @@ function Ring({ task }: { task: Task }) {
 }
 
 function TaskRow({ task, onCancel, onOpen, onRepair }: { task: Task; onCancel: (id: number) => void; onOpen: (path: string) => void; onRepair: () => void }) {
+  const t = useT();
   const [thumbOk, setThumbOk] = useState(true);
   return (
     <div className="w-item">
@@ -199,14 +206,14 @@ function TaskRow({ task, onCancel, onOpen, onRepair }: { task: Task; onCancel: (
         {task.action === "cancel" && (
           <>
             <Ring task={task} />
-            <button type="button" className="w-btn" onClick={() => onCancel(task.id)}>Annuler</button>
+            <button type="button" className="w-btn" onClick={() => onCancel(task.id)}>{t("task.cancel")}</button>
           </>
         )}
         {task.action === "open" && (
-          <button type="button" className="w-btn" onClick={() => task.finalPath && onOpen(task.finalPath)}>Afficher</button>
+          <button type="button" className="w-btn" onClick={() => task.finalPath && onOpen(task.finalPath)}>{t("task.show")}</button>
         )}
         {task.action === "repair" && (
-          <button type="button" className="w-btn w-btn--accent" onClick={onRepair}>Réparer</button>
+          <button type="button" className="w-btn w-btn--accent" onClick={onRepair}>{t("task.repair")}</button>
         )}
       </div>
     </div>
@@ -221,7 +228,11 @@ export default function WinLayout(props: Props) {
     subs, setSubs, thumb, setThumb, tasks, env, appVersion,
   } = props;
 
+  const t = useT();
   const urlRef = useRef<HTMLInputElement>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Installe sans choix de langue (cas rare : l'installeur la demande).
+  const [firstRun, setFirstRun] = useState(languagePickNeeded);
   const [toast, setToast] = useState("");
   const toastTimer = useRef<number | undefined>(undefined);
   const [maximized, setMaximized] = useState(false);
@@ -286,7 +297,7 @@ export default function WinLayout(props: Props) {
 
   function download() {
     if (!url.trim()) {
-      showToast("Colle d'abord un lien");
+      showToast(t("toast.pasteFirst"));
       urlRef.current?.focus();
       return;
     }
@@ -300,7 +311,7 @@ export default function WinLayout(props: Props) {
       urlRef.current?.focus();
     } catch {
       urlRef.current?.focus();
-      showToast("Colle le lien avec Ctrl+V");
+      showToast(t("toast.useCtrlV"));
     }
   }
 
@@ -319,7 +330,7 @@ export default function WinLayout(props: Props) {
 
   const running = tasks.filter((t) => t.action === "cancel").length;
   const onEnter = (e: ReactKeyboardEvent) => e.key === "Enter" && download();
-  const shortQuality = (q: string) => (q.startsWith("Qualité max") ? "Max" : q.replace(/ \(.*\)$/, ""));
+  const shortQuality = (q: string) => (q === props.qualities[0] ? "Max" : q.replace(/ \(.*\)$/, ""));
 
   return (
     <div className="app win" data-os="windows">
@@ -331,27 +342,27 @@ export default function WinLayout(props: Props) {
           {appVersion && <span className="w-titlebar__ver" data-tauri-drag-region>{appVersion}</span>}
         </div>
         <div className="w-caption">
-          <button type="button" aria-label="Réduire" onClick={() => appWindow.minimize()}>
+          <button type="button" aria-label={t("win.minimize")} onClick={() => appWindow.minimize()}>
             <svg width="10" height="10" viewBox="0 0 10 10"><path d="M0 5.5h10" stroke="currentColor" /></svg>
           </button>
-          <button type="button" aria-label={maximized ? "Restaurer" : "Agrandir"} onClick={() => appWindow.toggleMaximize()}>
+          <button type="button" aria-label={maximized ? t("win.restore") : t("win.maximize")} onClick={() => appWindow.toggleMaximize()}>
             {maximized ? (
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor"><rect x=".5" y="2.5" width="7" height="7" rx="1" /><path d="M2.5 2.5V1.5a1 1 0 0 1 1-1h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-1" /></svg>
             ) : (
               <svg width="10" height="10" viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9" rx="1.5" fill="none" stroke="currentColor" /></svg>
             )}
           </button>
-          <button type="button" className="w-caption__close" aria-label="Fermer" onClick={() => appWindow.close()}>
+          <button type="button" className="w-caption__close" aria-label={t("win.close")} onClick={() => appWindow.close()}>
             <svg width="10" height="10" viewBox="0 0 10 10"><path d="M.5.5l9 9m0-9-9 9" stroke="currentColor" /></svg>
           </button>
         </div>
       </header>
 
       {/* ---- Volet de reglages (Mica) ---- */}
-      <aside className="w-pane" aria-label="Réglages du téléchargement">
+      <aside className="w-pane" aria-label={t("pane.label")}>
         {profile.ladder && (
           <section>
-            <h3 id="w-quality-title">Qualité</h3>
+            <h3 id="w-quality-title">{t("pane.quality")}</h3>
             <div className="w-qgrid" role="radiogroup" aria-labelledby="w-quality-title">
               {qualities.map((q, i) => (
                 <button
@@ -360,7 +371,7 @@ export default function WinLayout(props: Props) {
                   id={`w-quality-${i}`}
                   role="radio"
                   aria-checked={q === quality}
-                  title={q}
+                  title={qualityDisplay(q)}
                   className={`w-btn${q === quality ? " w-btn--accent" : ""}`}
                   onClick={() => setQuality(q)}
                 >
@@ -372,77 +383,87 @@ export default function WinLayout(props: Props) {
         )}
 
         <section>
-          <h3>Options</h3>
+          <h3>{t("pane.options")}</h3>
           <div className="w-cards">
             <div className="w-card">
               <Ico d="scissors" className="w-card__icon" />
-              <span className="w-card__label">Extraire un passage</span>
-              <Toggle id="w-clip" checked={clip} onChange={setClip} label="Extraire un passage" />
+              <span className="w-card__label">{t("pane.clip")}</span>
+              <Toggle id="w-clip" checked={clip} onChange={setClip} label={t("pane.clip")} />
             </div>
             {clip && (
               <div className="w-card w-card--times">
                 <label className="w-times" htmlFor="w-start">
-                  Début
+                  {t("pane.start")}
                   <input id="w-start" className="w-field w-field--time" value={start} placeholder="00:00" onChange={(e) => setStart(e.target.value)} onKeyDown={onEnter} spellCheck={false} />
                 </label>
                 <label className="w-times" htmlFor="w-end">
-                  Fin
+                  {t("pane.end")}
                   <input id="w-end" className="w-field w-field--time" value={end} placeholder="01:30" onChange={(e) => setEnd(e.target.value)} onKeyDown={onEnter} spellCheck={false} />
                 </label>
               </div>
             )}
             <div className="w-card">
               <Ico d="convert" className="w-card__icon" />
-              <span className="w-card__label">Transcodage</span>
-              <Toggle id="w-transcode" checked={transcode} onChange={toggleTranscode} label="Transcodage" />
+              <span className="w-card__label">{t("pane.transcode")}</span>
+              <Toggle id="w-transcode" checked={transcode} onChange={toggleTranscode} label={t("pane.transcode")} />
             </div>
             {transcode && (
               <div className="w-card w-card--sub">
-                <span className="w-card__label">Format de sortie</span>
-                <ComboBox id="w-output" value={output} values={outputs} onChange={setOutput} label="Format de sortie" />
+                <span className="w-card__label">{t("pane.output")}</span>
+                <ComboBox id="w-output" value={output} values={outputs} onChange={setOutput} label={t("pane.output")} display={outputDisplay} />
               </div>
             )}
             {profile.subtitles && (
               <div className="w-card">
                 <Ico d="subtitles" className="w-card__icon" />
-                <span className="w-card__label">Sous-titres (.srt)</span>
-                <Toggle id="w-subs" checked={subs} onChange={setSubs} label="Sous-titres" />
+                <span className="w-card__label">{t("pane.subs")}</span>
+                <Toggle id="w-subs" checked={subs} onChange={setSubs} label={t("pane.subs")} />
               </div>
             )}
             {profile.thumbnail && (
               <div className="w-card">
                 <Ico d="image" className="w-card__icon" />
-                <span className="w-card__label">Miniature</span>
-                <Toggle id="w-thumb" checked={thumb} onChange={setThumb} label="Miniature" />
+                <span className="w-card__label">{t("pane.thumb")}</span>
+                <Toggle id="w-thumb" checked={thumb} onChange={setThumb} label={t("pane.thumb")} />
               </div>
             )}
           </div>
         </section>
 
         <section>
-          <h3>Destination</h3>
+          <h3>{t("pane.destination")}</h3>
           <div className="w-dest">
             <div className="w-dest__path" title={env?.downloadDir}>
               <Ico d="folder" />
               <span>{env?.downloadDir ?? "…"}</span>
             </div>
             <div className="w-dest__buttons">
-              <button type="button" id="w-choose" className="w-btn" onClick={props.onChooseDestination}>Choisir…</button>
-              <button type="button" id="w-reveal" className="w-btn" disabled={!env} onClick={() => env && props.onOpen(env.downloadDir)}>Ouvrir</button>
+              <button type="button" id="w-choose" className="w-btn" onClick={props.onChooseDestination}>{t("pane.choose")}</button>
+              <button type="button" id="w-reveal" className="w-btn" disabled={!env} onClick={() => env && props.onOpen(env.downloadDir)}>{t("pane.open")}</button>
             </div>
           </div>
         </section>
 
-        {env && (
-          <footer className="w-pane__foot">
-            {env.cookiesOk ? (
-              <span><i className="w-dot" />Cookies {env.cookiesSource} ✓</span>
+        <footer className="w-pane__foot">
+          <div className="w-pane__state">
+            {env && (env.cookiesOk ? (
+              <span><i className="w-dot" />{t("pane.cookiesOk", { source: env.cookiesSource })}</span>
             ) : (
-              <button type="button" className="w-link" onClick={props.onRepair}>Cookies absents · Réparer…</button>
-            )}
-            {!env.jsRuntime && <span>4K limitée (Deno absent)</span>}
-          </footer>
-        )}
+              <button type="button" className="w-link" onClick={props.onRepair}>{t("pane.cookiesMissing")}</button>
+            ))}
+            {env && !env.jsRuntime && <span>{t("pane.noDeno")}</span>}
+          </div>
+          <button
+            type="button"
+            id="w-settings"
+            className={`w-btn w-btn--subtle w-btn--icon${settingsOpen ? " is-active" : ""}`}
+            aria-label={t("settings.title")}
+            title={t("settings.title")}
+            onClick={() => setSettingsOpen(true)}
+          >
+            <Ico d="settings" />
+          </button>
+        </footer>
       </aside>
 
       {/* ---- Couche de contenu : lien + file ---- */}
@@ -455,16 +476,16 @@ export default function WinLayout(props: Props) {
               ref={urlRef}
               type="text"
               value={url}
-              placeholder={profile.placeholder}
+              placeholder={t(profile.placeholder)}
               onChange={(e) => setUrl(e.target.value)}
               onKeyDown={onEnter}
               spellCheck={false}
             />
             {profile.id !== "default" && <span className="w-chip">{profile.label}</span>}
           </label>
-          <button type="button" id="w-paste" className="w-btn w-btn--tall" onClick={paste} title="Coller le lien (Ctrl+V)">
+          <button type="button" id="w-paste" className="w-btn w-btn--tall" onClick={paste} title={t("cmd.pasteTitle")}>
             <Ico d="paste" />
-            Coller
+            {t("cmd.paste")}
           </button>
           {props.updateVersion && (
             <button
@@ -472,33 +493,33 @@ export default function WinLayout(props: Props) {
               id="w-update"
               className="w-btn w-btn--tall w-btn--update"
               disabled={props.updateInstalling}
-              title={`Installer la version ${props.updateVersion} et relancer`}
+              title={t("cmd.updateTitle", { version: props.updateVersion })}
               onClick={props.onInstallUpdate}
             >
               {props.updateInstalling ? <span className="w-spinner" /> : <span className="w-led" aria-hidden="true" />}
-              {props.updateInstalling ? "Installation…" : "Mise à jour"}
+              {props.updateInstalling ? t("cmd.installing") : t("cmd.update")}
             </button>
           )}
           <button type="button" id="w-download" className="w-btn w-btn--accent w-btn--tall" onClick={download}>
             <Ico d="download" />
-            Télécharger
+            {t("cmd.download")}
           </button>
         </div>
 
         <div className="w-qhead">
           <h2>
-            File de téléchargements
-            {running > 0 && <span>{running} en cours</span>}
+            {t("queue.title")}
+            {running > 0 && <span>{t("queue.running", { n: running })}</span>}
           </h2>
-          <button type="button" id="w-clear" className="w-btn w-btn--subtle" onClick={props.onClear}>Nettoyer la liste</button>
+          <button type="button" id="w-clear" className="w-btn w-btn--subtle" onClick={props.onClear}>{t("queue.clear")}</button>
         </div>
 
         <div className="w-list">
           {tasks.length === 0 ? (
             <div className="w-empty">
               <Ico d="download" />
-              <p>Aucun téléchargement pour l'instant.</p>
-              <span>Colle un lien ci-dessus pour commencer.</span>
+              <p>{t("queue.empty")}</p>
+              <span>{t("queue.emptyHint")}</span>
             </div>
           ) : (
             tasks.map((t) => <TaskRow key={t.id} task={t} onCancel={props.onCancel} onOpen={props.onOpen} onRepair={props.onRepair} />)
@@ -518,7 +539,7 @@ export default function WinLayout(props: Props) {
               }}
             >
               <Ico d="download" />
-              Test visuel : remplir la file
+              {t("test.fill")}
             </button>
             <div className="w-ctx__sep" />
             <button
@@ -531,11 +552,14 @@ export default function WinLayout(props: Props) {
               }}
             >
               <span className="wi" />
-              Vider la file de test
+              {t("test.clear")}
             </button>
           </div>
         )}
       </main>
+
+      {settingsOpen && <SettingsDialog version={appVersion} onClose={() => setSettingsOpen(false)} />}
+      {firstRun && <FirstRunDialog onDone={() => setFirstRun(false)} />}
     </div>
   );
 }

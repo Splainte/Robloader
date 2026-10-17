@@ -1,6 +1,7 @@
 use tauri::Manager;
 
 mod engine;
+mod i18n;
 #[cfg(target_os = "macos")]
 mod macos_ui;
 
@@ -85,6 +86,15 @@ fn mac_set_update(app: tauri::AppHandle, version: Option<String>, installing: bo
     let _ = (app, version, installing);
 }
 
+// macOS : choix de la langue au 1er lancement (feuille native sur la fenetre).
+#[tauri::command]
+fn mac_first_run(app: tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    macos_ui::first_run(&app);
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+}
+
 #[tauri::command]
 async fn mac_toolbar_height(app: tauri::AppHandle) -> f64 {
     #[cfg(target_os = "macos")]
@@ -130,14 +140,83 @@ fn log_panics() {
     }
 }
 
+// macOS : menu de l'app, traduit (le menu par defaut de Tauri est en anglais).
+// Refait a chaque changement de langue (cf. i18n::apply).
+#[cfg(target_os = "macos")]
+pub(crate) fn build_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
+    use i18n::tr;
+    use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
+    let settings = MenuItem::with_id(app, "settings", tr("Réglages…", "Settings…"), true, Some("Cmd+,"))?;
+    let app_menu = Submenu::with_items(
+        app,
+        "Robloader",
+        true,
+        &[
+            &PredefinedMenuItem::about(
+                app,
+                Some(tr("À propos de Robloader", "About Robloader")),
+                Some(AboutMetadata::default()),
+            )?,
+            &PredefinedMenuItem::separator(app)?,
+            &settings,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::services(app, Some(tr("Services", "Services")))?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, Some(tr("Masquer Robloader", "Hide Robloader")))?,
+            &PredefinedMenuItem::hide_others(app, Some(tr("Masquer les autres", "Hide Others")))?,
+            &PredefinedMenuItem::show_all(app, Some(tr("Tout afficher", "Show All")))?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::quit(app, Some(tr("Quitter Robloader", "Quit Robloader")))?,
+        ],
+    )?;
+    let edit_menu = Submenu::with_items(
+        app,
+        tr("Édition", "Edit"),
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, Some(tr("Annuler", "Undo")))?,
+            &PredefinedMenuItem::redo(app, Some(tr("Rétablir", "Redo")))?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, Some(tr("Couper", "Cut")))?,
+            &PredefinedMenuItem::copy(app, Some(tr("Copier", "Copy")))?,
+            &PredefinedMenuItem::paste(app, Some(tr("Coller", "Paste")))?,
+            &PredefinedMenuItem::select_all(app, Some(tr("Tout sélectionner", "Select All")))?,
+        ],
+    )?;
+    let window_menu = Submenu::with_items(
+        app,
+        tr("Fenêtre", "Window"),
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, Some(tr("Réduire", "Minimize")))?,
+            &PredefinedMenuItem::maximize(app, Some(tr("Zoom", "Zoom")))?,
+            &PredefinedMenuItem::fullscreen(app, Some(tr("Plein écran", "Enter Full Screen")))?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::close_window(app, Some(tr("Fermer la fenêtre", "Close Window")))?,
+        ],
+    )?;
+    // « Test visuel » : file factice pour tester le defilement sous la barre
+    // d'outils et ses interactions.
+    let fill = MenuItem::with_id(app, "visual-test-fill", tr("Remplir la file (factice)", "Fill the queue (fake)"), true, None::<&str>)?;
+    let clear = MenuItem::with_id(app, "visual-test-clear", tr("Vider la file factice", "Clear the fake queue"), true, None::<&str>)?;
+    let test_menu = Submenu::with_items(app, tr("Test visuel", "Visual test"), true, &[&fill, &clear])?;
+    app.set_menu(Menu::with_items(app, &[&app_menu, &edit_menu, &window_menu, &test_menu])?)?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     log_panics();
+    // Avant la creation de la fenetre (cf. i18n::detect_veteran).
+    let veteran = i18n::detect_veteran("com.robin.robloader");
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(engine::Engine::default())
-        .setup(|app| {
+        .setup(move |app| {
+            // Langue avant toute interface (l'interface native macOS est
+            // construite ci-dessous).
+            i18n::init(veteran);
             let window = app.get_webview_window("main").unwrap();
 
             // La fenetre demarre cachee (visible: false) et le front l'affiche une
@@ -184,25 +263,20 @@ pub fn run() {
                 fallback_solid_background(&window);
             }
 
-            // macOS : menu « Test visuel » (file factice pour tester le
-            // defilement sous la barre d'outils et ses interactions).
+            // macOS : menu de l'app (Reglages… ⌘, et « Test visuel »).
             #[cfg(target_os = "macos")]
             {
-                use tauri::menu::{Menu, MenuItem, Submenu};
                 use tauri::Emitter;
-                let handle = app.handle();
-                let menu = Menu::default(handle)?;
-                let fill = MenuItem::with_id(handle, "visual-test-fill", "Remplir la file (factice)", true, None::<&str>)?;
-                let clear = MenuItem::with_id(handle, "visual-test-clear", "Vider la file factice", true, None::<&str>)?;
-                menu.append(&Submenu::with_items(handle, "Test visuel", true, &[&fill, &clear])?)?;
-                app.set_menu(menu)?;
-                app.on_menu_event(|app, event| {
-                    let fill = match event.id().as_ref() {
-                        "visual-test-fill" => true,
-                        "visual-test-clear" => false,
-                        _ => return,
-                    };
-                    let _ = app.emit("mac://visual-test", fill);
+                build_menu(app.handle())?;
+                app.on_menu_event(|app, event| match event.id().as_ref() {
+                    "settings" => macos_ui::open_settings(app),
+                    "visual-test-fill" => {
+                        let _ = app.emit("mac://visual-test", true);
+                    }
+                    "visual-test-clear" => {
+                        let _ = app.emit("mac://visual-test", false);
+                    }
+                    _ => {}
                 });
             }
 
@@ -251,7 +325,11 @@ pub fn run() {
             engine::cancel_download,
             engine::reveal_in_folder,
             engine::open_cookie_help,
+            engine::open_source_page,
+            i18n::get_language,
+            i18n::set_language,
             mac_native_ui,
+            mac_first_run,
             mac_set_env,
             mac_set_update,
             mac_toolbar_height,

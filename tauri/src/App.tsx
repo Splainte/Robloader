@@ -6,6 +6,7 @@ import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 import MacLayout from "./MacLayout";
 import WinLayout from "./WinLayout";
+import { languagePickNeeded, t, useT, type Key } from "./i18n";
 
 const appWindow = getCurrentWindow();
 // macOS = barre native (feux tricolores dessines par l'OS, en haut a gauche).
@@ -36,11 +37,13 @@ const OUTPUTS_NATIVE = [
 ];
 
 // Profils de source : pilotent placeholder + options visibles (cf. SITE_PROFILES).
+// Les libelles de qualite et de format ci-dessus servent aussi de valeurs pour
+// le moteur : ils restent en francais, seul l'affichage est traduit.
 export type Profile = {
   id: string;
   label: string;
   domains: string[];
-  placeholder: string;
+  placeholder: Key;
   ladder: boolean;
   subtitles: boolean;
   thumbnail: boolean;
@@ -49,18 +52,28 @@ const DEFAULT_PROFILE: Profile = {
   id: "default",
   label: "Vidéo",
   domains: [],
-  placeholder: "Colle un lien (YouTube, TikTok, Instagram, X, Weibo)…",
+  placeholder: "placeholder.default",
   ladder: true,
   subtitles: true,
   thumbnail: true,
 };
 const SITE_PROFILES: Profile[] = [
-  { id: "youtube", label: "YouTube", domains: ["youtube.com", "youtu.be"], placeholder: "Colle un lien YouTube ici…", ladder: true, subtitles: true, thumbnail: true },
-  { id: "tiktok", label: "TikTok", domains: ["tiktok.com"], placeholder: "Colle un lien TikTok ici…", ladder: false, subtitles: false, thumbnail: true },
-  { id: "instagram", label: "Instagram", domains: ["instagram.com", "instagr.am"], placeholder: "Colle un lien Instagram ici…", ladder: false, subtitles: false, thumbnail: false },
-  { id: "x", label: "X", domains: ["twitter.com", "x.com"], placeholder: "Colle un lien X (Twitter) ici…", ladder: false, subtitles: false, thumbnail: false },
-  { id: "weibo", label: "Weibo", domains: ["weibo.com", "weibo.cn"], placeholder: "Colle un lien Weibo ici…", ladder: false, subtitles: false, thumbnail: false },
+  { id: "youtube", label: "YouTube", domains: ["youtube.com", "youtu.be"], placeholder: "placeholder.youtube", ladder: true, subtitles: true, thumbnail: true },
+  { id: "tiktok", label: "TikTok", domains: ["tiktok.com"], placeholder: "placeholder.tiktok", ladder: false, subtitles: false, thumbnail: true },
+  { id: "instagram", label: "Instagram", domains: ["instagram.com", "instagr.am"], placeholder: "placeholder.instagram", ladder: false, subtitles: false, thumbnail: false },
+  { id: "x", label: "X", domains: ["twitter.com", "x.com"], placeholder: "placeholder.x", ladder: false, subtitles: false, thumbnail: false },
+  { id: "weibo", label: "Weibo", domains: ["weibo.com", "weibo.cn"], placeholder: "placeholder.weibo", ladder: false, subtitles: false, thumbnail: false },
 ];
+
+// Libelles affiches (cf. Profile) : qualite et format dans la langue courante.
+export function qualityDisplay(q: string): string {
+  return q === QUALITY_LABELS[0] ? t("quality.max") : q;
+}
+export function outputDisplay(o: string): string {
+  if (o === "Vidéo (natif)") return t("output.native");
+  if (o === "Sous-titres seuls (.srt)") return t("output.subs");
+  return o;
+}
 
 function detectProfile(url: string): Profile {
   const u = url.trim();
@@ -84,6 +97,8 @@ function detectProfile(url: string): Profile {
 // ------------------------------------------------------------------
 export type StatusKind = "info" | "warn" | "ok" | "err";
 export type ActionKind = "cancel" | "open" | "repair" | "none";
+// Etape en cours, independante de la langue du statut (couleur de l'anneau).
+export type Phase = "download" | "process";
 
 export type Task = {
   id: number;
@@ -95,6 +110,7 @@ export type Task = {
   indeterminate: boolean;
   action: ActionKind;
   finalPath?: string;
+  phase?: Phase;
 };
 
 // Mise a jour partielle envoyee par le backend (event "task://update").
@@ -109,6 +125,7 @@ type TaskUpdate = {
   action?: ActionKind;
   finalPath?: string;
   done?: boolean;
+  phase?: Phase;
 };
 
 type DownloadSettings = {
@@ -164,30 +181,34 @@ function makeVisualTestTasks(): Task[] {
       indeterminate: false,
       action: "cancel",
     };
-    if (kind === 0) out.push({ ...base, status: "Téléchargement… 0%", percent: (i * 7) % 60 / 100 });
-    else if (kind === 1) out.push({ ...base, status: "Conversion H.265… 0%", percent: (i * 5) % 50 / 100 });
-    else if (kind === 2) out.push({ ...base, status: "Analyse de la vidéo…", indeterminate: true });
-    else if (kind === 3) out.push({ ...base, status: "Échec : vidéo réservée aux membres", statusKind: "err", action: "repair" });
-    else if (kind === 4) out.push({ ...base, status: "Annulé", statusKind: "warn", action: "none" });
-    else out.push({ ...base, status: "Terminé ✓ Vidéo native (.mp4)", statusKind: "ok", percent: 1, action: "open", finalPath: "/tmp" });
+    if (kind === 0) out.push({ ...base, status: `${t("test.downloading")} 0%`, percent: (i * 7) % 60 / 100, phase: "download" });
+    else if (kind === 1) out.push({ ...base, status: `${t("test.converting")} 0%`, percent: (i * 5) % 50 / 100, phase: "process" });
+    else if (kind === 2) out.push({ ...base, status: t("test.analyzing"), indeterminate: true });
+    else if (kind === 3) out.push({ ...base, status: t("test.failed"), statusKind: "err", action: "repair" });
+    else if (kind === 4) out.push({ ...base, status: t("task.cancelled"), statusKind: "warn", action: "none" });
+    else out.push({ ...base, status: t("test.doneNative"), statusKind: "ok", percent: 1, action: "open", finalPath: "/tmp" });
   }
   return out;
 }
 
+// `t` est ici la tache : la traduction passe par `tr`.
+const tr = t;
 function tickVisualTest(t: Task): Task {
   if (t.id >= 0 || t.action !== "cancel" || t.indeterminate) return t;
-  const dl = t.status.startsWith("Téléchargement");
+  const dl = t.phase === "download";
   const p = Math.min(1, t.percent + (dl ? 0.012 : 0.007));
   if (p >= 1) {
     return dl
-      ? { ...t, percent: 0, status: "Conversion H.265… 0%" }
-      : { ...t, percent: 1, status: "Terminé ✓ HEVC", statusKind: "ok", action: "open", finalPath: "/tmp" };
+      ? { ...t, percent: 0, phase: "process", status: `${tr("test.converting")} 0%` }
+      : { ...t, percent: 1, status: tr("test.doneHevc"), statusKind: "ok", action: "open", finalPath: "/tmp" };
   }
-  const label = dl ? "Téléchargement…" : "Conversion H.265…";
+  const label = dl ? tr("test.downloading") : tr("test.converting");
   return { ...t, percent: p, status: `${label} ${Math.round(p * 100)}%` };
 }
 
 function App() {
+  // Re-rendu au changement de langue (Reglages).
+  const t = useT();
   const [url, setUrl] = useState("");
   const [quality, setQuality] = useState(QUALITY_LABELS[0]);
   const [transcode, setTranscode] = useState(true);
@@ -215,7 +236,11 @@ function App() {
   useEffect(() => {
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
-        appWindow.show().catch(() => {});
+        appWindow.show().then(() => {
+          // macOS : 1er lancement sans langue choisie (pas d'installeur) ->
+          // feuille native sur la fenetre, une fois celle-ci visible.
+          if (isMac && languagePickNeeded()) invoke("mac_first_run").catch(() => {});
+        }).catch(() => {});
       })
     );
   }, []);
@@ -275,6 +300,7 @@ function App() {
                 ...(u.indeterminate !== undefined ? { indeterminate: u.indeterminate } : {}),
                 ...(u.action !== undefined ? { action: u.action } : {}),
                 ...(u.finalPath !== undefined ? { finalPath: u.finalPath } : {}),
+                ...(u.phase !== undefined ? { phase: u.phase } : {}),
               }
             : t
         )
@@ -362,8 +388,8 @@ function App() {
       const id = idCounter.current;
       newTasks.push({
         id,
-        title: "Analyse du lien…",
-        status: "En attente…",
+        title: t("task.analyzing"),
+        status: t("task.waiting"),
         statusKind: "info",
         percent: 0,
         indeterminate: true,
@@ -380,7 +406,7 @@ function App() {
         setTasks((prev) =>
           prev.map((t) =>
             t.id === id
-              ? { ...t, status: `Échec : ${err}`, statusKind: "err", action: "none", indeterminate: false }
+              ? { ...t, status: tr("task.failed", { error: String(err) }), statusKind: "err", action: "none", indeterminate: false }
               : t
           )
         );
@@ -418,7 +444,7 @@ function App() {
     if (id < 0) {
       setTasks((prev) =>
         prev.map((t) =>
-          t.id === id ? { ...t, status: "Annulé", statusKind: "warn", action: "none", indeterminate: false } : t
+          t.id === id ? { ...t, status: tr("task.cancelled"), statusKind: "warn", action: "none", indeterminate: false } : t
         )
       );
       return;

@@ -10,6 +10,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Icon } from "./icons";
 import type { Task } from "./App";
+import { useT } from "./i18n";
 import "./MacLayout.css";
 
 type Props = {
@@ -23,7 +24,7 @@ type Props = {
 // Anneau de progression : bleu d'accent au telechargement, violet au transcodage.
 const RING_C = 2 * Math.PI * 8;
 function Ring({ task }: { task: Task }) {
-  const tc = !task.indeterminate && !task.status.startsWith("Téléchargement");
+  const tc = !task.indeterminate && task.phase === "process";
   const p = task.indeterminate ? 0.28 : task.percent;
   return (
     <svg
@@ -55,6 +56,7 @@ function TaskRow({
   onOpen: (path: string) => void;
   onRepair: () => void;
 }) {
+  const t = useT();
   const [thumbOk, setThumbOk] = useState(true);
   return (
     <div className="mac-task">
@@ -78,7 +80,7 @@ function TaskRow({
           <>
             <Ring task={task} />
             <button type="button" className="mac-pill" onClick={() => onCancel(task.id)}>
-              Annuler
+              {t("task.cancel")}
             </button>
           </>
         )}
@@ -88,12 +90,12 @@ function TaskRow({
             className="mac-pill"
             onClick={() => task.finalPath && onOpen(task.finalPath)}
           >
-            Afficher
+            {t("task.show")}
           </button>
         )}
         {task.action === "repair" && (
           <button type="button" className="mac-pill mac-pill--accent" onClick={onRepair}>
-            Réparer
+            {t("task.repair")}
           </button>
         )}
       </div>
@@ -102,6 +104,7 @@ function TaskRow({
 }
 
 export default function MacLayout({ tasks, onCancel, onOpen, onRepair, onClear }: Props) {
+  const t = useT();
   const [toolbarH, setToolbarH] = useState(52);
   const [toast, setToast] = useState("");
   const toastTimer = useRef<number | undefined>(undefined);
@@ -117,7 +120,7 @@ export default function MacLayout({ tasks, onCancel, onOpen, onRepair, onClear }
   useEffect(() => {
     const un = listen<{ url: string }>("mac://download", (e) => {
       if (e.payload.url.trim()) return;
-      setToast("Colle d'abord un lien");
+      setToast(t("toast.pasteFirst"));
       window.clearTimeout(toastTimer.current);
       toastTimer.current = window.setTimeout(() => setToast(""), 2400);
     });
@@ -136,17 +139,17 @@ export default function MacLayout({ tasks, onCancel, onOpen, onRepair, onClear }
       <main className="mac-queue">
         <div className="mac-queue__head">
           <h2>
-            File de téléchargements
-            {running > 0 && <span>{running} en cours</span>}
+            {t("queue.title")}
+            {running > 0 && <span>{t("queue.running", { n: running })}</span>}
           </h2>
           <button type="button" className="mac-pill" onClick={onClear}>
-            Nettoyer la liste
+            {t("queue.clear")}
           </button>
         </div>
 
         {tasks.length === 0 ? (
           <div className="mac-queue__empty">
-            Aucun téléchargement pour l'instant. Colle un lien dans la barre d'outils.
+            {t("queue.emptyMac")}
           </div>
         ) : (
           <div className="mac-card">
