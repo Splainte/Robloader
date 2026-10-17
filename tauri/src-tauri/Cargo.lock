@@ -2759,7 +2759,7 @@ dependencies = [
 
 [[package]]
 name = "robloader-tauri"
-version = "2.3.0"
+version = "2.3.1"
 dependencies = [
  "block2",
  "objc2",

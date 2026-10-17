@@ -270,6 +270,7 @@ struct Ui {
     dest_label: Retained<NSTextField>,
     foot_label: Retained<NSTextField>,
     repair_button: Retained<NSButton>,
+    sidebar_scroll: Retained<FadingScrollView>,
 }
 
 thread_local! {
@@ -1124,6 +1125,11 @@ fn pin_width(view: &NSView, to: &NSView, inset: f64) {
     NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&[leading, trailing]));
 }
 
+thread_local! {
+    // Pied ancre en bas du volet : sa hauteur regle le fondu du bas.
+    static SIDEBAR_FOOTER: RefCell<Option<Retained<NSStackView>>> = const { RefCell::new(None) };
+}
+
 define_class!(
     // Defilement du volet : le contenu s'efface progressivement sous la barre
     // d'outils (AppKit n'expose pas d'API pour l'effet de bord du systeme, et
@@ -1167,6 +1173,12 @@ impl FadingScrollView {
             .unwrap_or(52.0);
         let fade_start = (toolbar * 0.45).min(height);
         let fade_end = (toolbar + 14.0).min(height);
+        // En bas, meme effet sous le pied ancre (etat des cookies + roue).
+        let footer = SIDEBAR_FOOTER
+            .with(|f| f.borrow().as_ref().map(|v| v.frame().size.height))
+            .unwrap_or(0.0);
+        let bottom_end = (height - footer * 0.45).clamp(fade_end, height);
+        let bottom_start = (height - footer - 14.0).clamp(fade_end, bottom_end);
         unsafe {
             let layer: *mut AnyObject = msg_send![self, layer];
             if layer.is_null() {
@@ -1185,7 +1197,7 @@ impl FadingScrollView {
                 let clear_cg: *mut AnyObject = msg_send![&*clear, CGColor];
                 let opaque_cg: *mut AnyObject = msg_send![&*opaque, CGColor];
                 let colors: *mut AnyObject = msg_send![objc2::class!(NSMutableArray), array];
-                for c in [clear_cg, clear_cg, opaque_cg, opaque_cg] {
+                for c in [clear_cg, clear_cg, opaque_cg, opaque_cg, clear_cg, clear_cg] {
                     let _: () = msg_send![colors, addObject: c];
                 }
                 let _: () = msg_send![mask, setColors: colors];
@@ -1201,6 +1213,8 @@ impl FadingScrollView {
                 NSNumber::new_f64(0.0),
                 NSNumber::new_f64(fade_start / height),
                 NSNumber::new_f64(fade_end / height),
+                NSNumber::new_f64(bottom_start / height),
+                NSNumber::new_f64(bottom_end / height),
                 NSNumber::new_f64(1.0),
             ]);
             let _: () = msg_send![mask, setLocations: &*locations];
@@ -1361,6 +1375,14 @@ fn build_ui(
     let foot_row = hstack(&[&foot_label, &gear], mtm);
     let repair_button = tbutton("Réparer les cookies…", "Repair cookies…", controller, sel!(onRepair:), mtm);
     repair_button.setHidden(true);
+    // Pied ancre en bas du volet, hors defilement : le contenu passe dessous
+    // en s'effacant. Une cale de meme hauteur termine la pile, pour que la
+    // destination puisse remonter au-dessus du pied.
+    let footer = vstack(&[&foot_row, &repair_button], 6.0, mtm);
+    footer.setEdgeInsets(NSEdgeInsets { top: 8.0, left: SIDE, bottom: 14.0, right: SIDE });
+    footer.setTranslatesAutoresizingMaskIntoConstraints(false);
+    pin_width(&foot_row, &footer, SIDE);
+    let foot_spacer = NSView::new(mtm);
 
     let stack = vstack(
         &[
@@ -1375,8 +1397,7 @@ fn build_ui(
             &dest_header,
             &dest_label,
             &dest_buttons,
-            &foot_row,
-            &repair_button,
+            &foot_spacer,
         ],
         10.0,
         mtm,
@@ -1393,7 +1414,6 @@ fn build_ui(
         stack.setCustomSpacing_afterView(0.0, v);
     }
     stack.setCustomSpacing_afterView(22.0, &thumb_reveal.container);
-    stack.setCustomSpacing_afterView(22.0, &dest_buttons);
     stack.setTranslatesAutoresizingMaskIntoConstraints(false);
 
     for v in [
@@ -1406,7 +1426,6 @@ fn build_ui(
         &thumb_reveal.container,
         &dest_label,
         &dest_buttons,
-        &foot_row,
     ] {
         pin_width(v, &stack, SIDE);
     }
@@ -1432,6 +1451,24 @@ fn build_ui(
         document.trailingAnchor().constraintEqualToAnchor(&clip_view.trailingAnchor()),
     ];
     NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&constraints));
+
+    // Volet = zone defilante pleine hauteur + pied ancre par-dessus, en bas.
+    let sidebar = NSView::new(mtm);
+    scroll.setTranslatesAutoresizingMaskIntoConstraints(false);
+    sidebar.addSubview(&scroll);
+    sidebar.addSubview(&footer);
+    let constraints = [
+        scroll.topAnchor().constraintEqualToAnchor(&sidebar.topAnchor()),
+        scroll.bottomAnchor().constraintEqualToAnchor(&sidebar.bottomAnchor()),
+        scroll.leadingAnchor().constraintEqualToAnchor(&sidebar.leadingAnchor()),
+        scroll.trailingAnchor().constraintEqualToAnchor(&sidebar.trailingAnchor()),
+        footer.bottomAnchor().constraintEqualToAnchor(&sidebar.bottomAnchor()),
+        footer.leadingAnchor().constraintEqualToAnchor(&sidebar.leadingAnchor()),
+        footer.trailingAnchor().constraintEqualToAnchor(&sidebar.trailingAnchor()),
+        foot_spacer.heightAnchor().constraintEqualToAnchor(&footer.heightAnchor()),
+    ];
+    NSLayoutConstraint::activateConstraints(&NSArray::from_retained_slice(&constraints));
+    SIDEBAR_FOOTER.with(|f| *f.borrow_mut() = Some(footer));
 
     // Capsule du lien : icone + champ sans bordure, dessin facon Safari.
     let url_field = NSTextField::textFieldWithString(ns_string!(""), mtm);
@@ -1511,8 +1548,9 @@ fn build_ui(
         dest_label,
         foot_label,
         repair_button,
+        sidebar_scroll: scroll,
     };
-    (Retained::into_super(Retained::into_super(scroll)), ui)
+    (sidebar, ui)
 }
 
 /// Installe barre d'outils + volet natifs. A appeler dans setup (thread principal).
@@ -1625,6 +1663,8 @@ fn show_env(download_dir: &str, cookies_ok: bool, cookies_source: &str, js_runti
         }
         ui.foot_label.setStringValue(&NSString::from_str(&foot));
         ui.repair_button.setHidden(cookies_ok);
+        // La hauteur du pied a pu changer : recaler le fondu du bas.
+        ui.sidebar_scroll.setNeedsLayout(true);
     });
 }
 
