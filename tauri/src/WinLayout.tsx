@@ -360,6 +360,9 @@ export default function WinLayout(props: Props) {
 
       {/* ---- Volet de reglages (Mica) ---- */}
       <aside className="w-pane" aria-label={t("pane.label")}>
+        {/* Reglages defilants ; le pied (cookies + roue) reste ancre en bas
+            et le contenu s'efface en passant dessous. */}
+        <div className="w-pane__scroll">
         {profile.ladder && (
           <section>
             <h3 id="w-quality-title">{t("pane.quality")}</h3>
@@ -443,6 +446,7 @@ export default function WinLayout(props: Props) {
             </div>
           </div>
         </section>
+        </div>
 
         <footer className="w-pane__foot">
           <div className="w-pane__state">
